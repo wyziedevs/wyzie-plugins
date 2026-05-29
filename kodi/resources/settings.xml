@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<settings>
+  <category label="General">
+    <setting id="api_key" type="text" label="Wyzie API key (free at store.wyzie.io/redeem)" default=""/>
+    <setting id="prefer_hi" type="bool" label="Prefer hearing-impaired subtitles" default="false"/>
+  </category>
+</settings>

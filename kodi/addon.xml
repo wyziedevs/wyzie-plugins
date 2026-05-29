@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon id="service.subtitles.wyzie"
+       name="Wyzie Subs"
+       version="1.0.0"
+       provider-name="Wyzie">
+  <requires>
+    <import addon="xbmc.python" version="3.0.0"/>
+    <import addon="script.module.requests" version="2.22.0"/>
+  </requires>
+  <extension point="xbmc.subtitle.module" library="service.py"/>
+  <extension point="xbmc.addon.metadata">
+    <summary lang="en_GB">Wyzie Subs — free subtitles in 80+ languages</summary>
+    <description lang="en_GB">Subtitle service powered by Wyzie Subs (sub.wyzie.io). Aggregates OpenSubtitles, SubDL, Podnapisi and more. Get a free API key at store.wyzie.io/redeem.</description>
+    <platform>all</platform>
+    <license>MIT</license>
+    <source>https://github.com/wyzie/wyzie-plugins</source>
+    <website>https://sub.wyzie.io</website>
+    <forum>https://discord.gg/wyzie</forum>
+    <assets>
+      <icon>resources/icon.png</icon>
+    </assets>
+  </extension>
+</addon>
