@@ -53,7 +53,7 @@ function mapToStremioSubs(items) {
       url: s.url,
       lang: s.language || 'en',
       // Stremio uses .display in its UI; pack source for transparency
-      name: `${s.display || s.language} — ${s.source || 'wyzie'}${s.ai ? ' (AI)' : ''}`,
+      name: `${s.display || s.language} / ${s.source || 'wyzie'}${s.ai ? ' (AI)' : ''}`,
     }));
 }
 
@@ -83,7 +83,7 @@ builder.defineSubtitlesHandler(async ({ type, id, config }) => {
       headers: { 'User-Agent': 'wyzie-stremio/1.0' },
     });
     if (!res.ok) {
-      // 402/429 — surface a single "subtitle" that links the user to the upgrade page.
+      // 402/429: surface a single "subtitle" that links the user to the upgrade page.
       if (res.status === 402 || res.status === 429) {
         return {
           subtitles: [
@@ -93,8 +93,8 @@ builder.defineSubtitlesHandler(async ({ type, id, config }) => {
               lang: 'eng',
               name:
                 res.status === 402
-                  ? 'Wyzie: out of requests — top up at store.wyzie.io'
-                  : 'Wyzie: daily limit hit — upgrade for more',
+                  ? 'Wyzie: out of requests. Top up at store.wyzie.io'
+                  : 'Wyzie: daily limit hit. Upgrade for more',
             },
           ],
           cacheMaxAge: 60,
