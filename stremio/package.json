@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "test": "node ../tests/stremio.e2e.cjs"
   },
   "dependencies": {
     "stremio-addon-sdk": "^1.6.10"
