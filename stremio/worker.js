@@ -206,7 +206,7 @@ function configPage(prefill) {
   .ms-search .svg { width: 15px; height: 15px; color: var(--type-footer); flex-shrink: 0; }
   .ms-search input { flex: 1; height: auto; padding: 0; border: none; background: transparent; box-shadow: none; font-size: 13px; color: var(--type-emphasized); border-radius: 0; }
   .ms-search input:focus { border: none; box-shadow: none; }
-  .ms-actions { display: flex; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border-200); }
+  .ms-actions { display: flex; gap: 8px; padding: 2px 2px 8px; }
   .ms-action {
     flex: 1; padding: 6px 8px; font-size: 12px; font-weight: 600; font-family: inherit;
     color: var(--type-subheader); background: var(--accent); border: 1px solid var(--border-300);
@@ -297,11 +297,13 @@ function configPage(prefill) {
             <svg class="svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
             <input id="msSearch" type="text" placeholder="Search languages" autocomplete="off" spellcheck="false" />
           </div>
-          <div class="ms-actions">
-            <button type="button" class="ms-action" id="msAll">Select all</button>
-            <button type="button" class="ms-action" id="msNone">Deselect all</button>
+          <div class="ms-list" id="msList">
+            <div class="ms-actions">
+              <button type="button" class="ms-action" id="msAll">Select all</button>
+              <button type="button" class="ms-action" id="msNone">Deselect all</button>
+            </div>
+            <div id="msRows"></div>
           </div>
-          <div class="ms-list" id="msList"></div>
         </div>
       </div>
       <div class="hint">Leave empty to fetch every available language.</div>
@@ -377,7 +379,7 @@ function configPage(prefill) {
   for (var li = 0; li < LANGS.length; li++) langByCode[LANGS[li][0]] = LANGS[li];
 
   var msEl = $('ms'), msControl = $('msControl'), msPanel = $('msPanel');
-  var msChips = $('msChips'), msList = $('msList'), msSearch = $('msSearch');
+  var msChips = $('msChips'), msList = $('msList'), msRows = $('msRows'), msSearch = $('msSearch');
 
   var selected = [];
   if (PREFILL.languages) {
@@ -428,7 +430,7 @@ function configPage(prefill) {
         flag(cc) + '<span class="opt-name">' + esc(name) + '</span><span class="opt-code">' + code + '</span>' +
         '<span class="opt-check">' + CHECK_SVG + '</span></button>';
     }
-    msList.innerHTML = h || '<div class="opt-empty">No matching languages</div>';
+    msRows.innerHTML = h || '<div class="opt-empty">No matching languages</div>';
   }
   function toggleLang(code){
     var k = selected.indexOf(code);
