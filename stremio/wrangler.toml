@@ -1,0 +1,8 @@
+name            = "wyzie-stremio"
+main            = "worker.js"
+account_id      = "41693b70cad8d2ae3d3e348d373df7d6"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true

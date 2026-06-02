@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js",
+    "dev:node": "node server.js",
+    "dev": "wrangler dev worker.js",
+    "deploy": "wrangler deploy",
     "test": "node ../tests/stremio.e2e.cjs"
   },
   "dependencies": {
