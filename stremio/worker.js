@@ -20,7 +20,7 @@ const MANIFEST = {
   version: '1.1.0',
   name: 'Wyzie Subs',
   description:
-    'Free subtitles in 80+ languages from Wyzie Subs. Aggregates OpenSubtitles, SubDL, Podnapisi and more. Get a free key at store.wyzie.io/#plans.',
+    'Free subtitles in 125 languages from Wyzie Subs. Aggregates OpenSubtitles, SubDL, Podnapisi and more. Get a free key at store.wyzie.io/#plans.',
   logo: 'https://i.postimg.cc/L5ppKYC5/cclogo.png',
   resources: ['subtitles'],
   types: ['movie', 'series'],
@@ -80,7 +80,7 @@ function configPage(prefill) {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="theme-color" content="#0b0b0b" />
 <title>Wyzie Subs for Stremio</title>
-<meta name="description" content="Install Wyzie Subs in Stremio. Free subtitles in 80+ languages." />
+<meta name="description" content="Install Wyzie Subs in Stremio. Free subtitles in 125 languages." />
 <link rel="icon" href="https://i.postimg.cc/L5ppKYC5/cclogo.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -187,6 +187,7 @@ function configPage(prefill) {
   }
   .flag { border-radius: 2px; display: block; flex-shrink: 0; }
   .chip-code { font-weight: 600; letter-spacing: 0.02em; }
+  .chip-count { padding: 3px 9px; font-weight: 600; }
   .chip-x {
     display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px;
     padding: 0; border: none; background: transparent; color: var(--type-footer);
@@ -205,6 +206,13 @@ function configPage(prefill) {
   .ms-search .svg { width: 15px; height: 15px; color: var(--type-footer); flex-shrink: 0; }
   .ms-search input { flex: 1; height: auto; padding: 0; border: none; background: transparent; box-shadow: none; font-size: 13px; color: var(--type-emphasized); border-radius: 0; }
   .ms-search input:focus { border: none; box-shadow: none; }
+  .ms-actions { display: flex; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border-200); }
+  .ms-action {
+    flex: 1; padding: 6px 8px; font-size: 12px; font-weight: 600; font-family: inherit;
+    color: var(--type-subheader); background: var(--accent); border: 1px solid var(--border-300);
+    border-radius: 6px; cursor: pointer; transition: border-color .15s var(--ease-out-quint), color .15s var(--ease-out-quint);
+  }
+  .ms-action:hover { border-color: var(--primary-600); color: var(--primary-400); }
   .ms-list { max-height: 210px; overflow-y: auto; padding: 6px; }
   .ms-list::-webkit-scrollbar { width: 10px; }
   .ms-list::-webkit-scrollbar-thumb { background: var(--border-300); border-radius: 6px; border: 3px solid var(--card); }
@@ -265,7 +273,7 @@ function configPage(prefill) {
       </div>
     </div>
     <h2 class="title">Add Wyzie Subs to Stremio</h2>
-    <p class="lead">Free subtitles in 80+ languages, aggregated from OpenSubtitles, SubDL, Podnapisi and more. Set your options below, then install.</p>
+    <p class="lead">Free subtitles in 125 languages, aggregated from OpenSubtitles, SubDL, Podnapisi and more. Set your options below, then install.</p>
 
     <div class="field">
       <label for="apiKey">Wyzie API key</label>
@@ -288,6 +296,10 @@ function configPage(prefill) {
           <div class="ms-search">
             <svg class="svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
             <input id="msSearch" type="text" placeholder="Search languages" autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="ms-actions">
+            <button type="button" class="ms-action" id="msAll">Select all</button>
+            <button type="button" class="ms-action" id="msNone">Deselect all</button>
           </div>
           <div class="ms-list" id="msList"></div>
         </div>
@@ -336,7 +348,30 @@ function configPage(prefill) {
     ['vi','Vietnamese','vn'], ['ro','Romanian','ro'], ['hu','Hungarian','hu'], ['uk','Ukrainian','ua'],
     ['bg','Bulgarian','bg'], ['hr','Croatian','hr'], ['sr','Serbian','rs'], ['sk','Slovak','sk'],
     ['sl','Slovenian','si'], ['ms','Malay','my'], ['fa','Persian','ir'], ['ca','Catalan','es'],
-    ['et','Estonian','ee'], ['lv','Latvian','lv'], ['lt','Lithuanian','lt']
+    ['et','Estonian','ee'], ['lv','Latvian','lv'], ['lt','Lithuanian','lt'], ['af','Afrikaans','za'],
+    ['sq','Albanian','al'], ['am','Amharic','et'], ['hy','Armenian','am'], ['az','Azerbaijani','az'],
+    ['eu','Basque','es'], ['be','Belarusian','by'], ['bn','Bengali','bd'], ['bs','Bosnian','ba'],
+    ['my','Burmese','mm'], ['km','Khmer','kh'], ['ka','Georgian','ge'], ['gl','Galician','es'],
+    ['gu','Gujarati','in'], ['ha','Hausa','ng'], ['is','Icelandic','is'], ['ig','Igbo','ng'],
+    ['ga','Irish','ie'], ['jv','Javanese','id'], ['kn','Kannada','in'], ['kk','Kazakh','kz'],
+    ['ky','Kyrgyz','kg'], ['lo','Lao','la'], ['lb','Luxembourgish','lu'], ['mk','Macedonian','mk'],
+    ['mg','Malagasy','mg'], ['ml','Malayalam','in'], ['mt','Maltese','mt'], ['mi','Maori','nz'],
+    ['mr','Marathi','in'], ['mn','Mongolian','mn'], ['ne','Nepali','np'], ['ps','Pashto','af'],
+    ['pa','Punjabi','in'], ['qu','Quechua','pe'], ['sm','Samoan','ws'], ['gd','Scottish Gaelic','gb-sct'],
+    ['sn','Shona','zw'], ['sd','Sindhi','pk'], ['si','Sinhala','lk'], ['so','Somali','so'],
+    ['st','Sesotho','ls'], ['su','Sundanese','id'], ['sw','Swahili','tz'], ['tg','Tajik','tj'],
+    ['ta','Tamil','in'], ['tt','Tatar','ru'], ['te','Telugu','in'], ['ti','Tigrinya','er'],
+    ['to','Tongan','to'], ['tk','Turkmen','tm'], ['ur','Urdu','pk'], ['ug','Uyghur','cn'],
+    ['uz','Uzbek','uz'], ['cy','Welsh','gb-wls'], ['fy','Frisian','nl'], ['xh','Xhosa','za'],
+    ['yi','Yiddish','il'], ['yo','Yoruba','ng'], ['zu','Zulu','za'], ['ny','Chichewa','mw'],
+    ['co','Corsican','fr'], ['fo','Faroese','fo'], ['fj','Fijian','fj'], ['ht','Haitian Creole','ht'],
+    ['ku','Kurdish','iq'], ['oc','Occitan','fr'], ['or','Odia','in'], ['rw','Kinyarwanda','rw'],
+    ['sa','Sanskrit','in'], ['br','Breton','fr'], ['bo','Tibetan','cn'], ['dv','Divehi','mv'],
+    ['gn','Guarani','py'], ['kl','Greenlandic','gl'], ['ln','Lingala','cd'], ['om','Oromo','et'],
+    ['rm','Romansh','ch'], ['ss','Swati','sz'], ['ts','Tsonga','za'], ['tn','Tswana','bw'],
+    ['ve','Venda','za'], ['wo','Wolof','sn'], ['ak','Akan','gh'], ['lg','Ganda','ug'],
+    ['ki','Kikuyu','ke'], ['ay','Aymara','bo'], ['dz','Dzongkha','bt'], ['ee','Ewe','gh'],
+    ['ff','Fula','sn']
   ];
   var langByCode = {};
   for (var li = 0; li < LANGS.length; li++) langByCode[LANGS[li][0]] = LANGS[li];
@@ -367,6 +402,12 @@ function configPage(prefill) {
 
   function renderChips(){
     if (!selected.length) { msChips.innerHTML = '<span class="ms-ph">All languages</span>'; return; }
+    // Collapse to a count once the list gets long, to avoid a giant chip wall.
+    if (selected.length > 8) {
+      var label = selected.length === LANGS.length ? 'All ' + LANGS.length + ' languages' : selected.length + ' languages selected';
+      msChips.innerHTML = '<span class="chip chip-count">' + label + '</span>';
+      return;
+    }
     var h = '';
     for (var i = 0; i < selected.length; i++) {
       var L = langByCode[selected[i]];
@@ -420,13 +461,24 @@ function configPage(prefill) {
     }
   });
   msSearch.addEventListener('input', renderList);
+  $('msAll').addEventListener('click', function(e){
+    e.stopPropagation();
+    selected = LANGS.map(function(l){ return l[0]; });
+    renderChips(); renderList();
+  });
+  $('msNone').addEventListener('click', function(e){
+    e.stopPropagation();
+    selected = [];
+    renderChips(); renderList();
+  });
   document.addEventListener('click', function(e){ if (!msEl.contains(e.target)) closePanel(); });
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closePanel(); });
   renderChips();
 
   function buildUrls() {
     var cfg = { apiKey: key.value.trim() };
-    if (selected.length) cfg.languages = selected.join(',');
+    // Selecting everything is the same as no filter, so keep the URL short.
+    if (selected.length && selected.length < LANGS.length) cfg.languages = selected.join(',');
     if (hi.checked) cfg.hi = true;
     var seg = encodeURIComponent(JSON.stringify(cfg));
     var path = '/' + seg + '/manifest.json';
