@@ -17,7 +17,7 @@ const WYZIE_BASE = 'https://sub.wyzie.io';
 
 const MANIFEST = {
   id: 'io.wyzie.subs',
-  version: '1.0.0',
+  version: '1.1.0',
   name: 'Wyzie Subs',
   description:
     'Free subtitles in 80+ languages from Wyzie Subs. Aggregates OpenSubtitles, SubDL, Podnapisi and more. Get a free key at store.wyzie.io/#plans.',
@@ -613,15 +613,37 @@ function withEncoding(rawUrl, encoding) {
   }
 }
 
+// Stremio's local streaming server. Routing each subtitle through it
+// (subtitles.vtt?from=<file>) makes Stremio fetch the file locally, detect its
+// encoding, convert it to a clean WebVTT, and serve it with proper headers.
+// That fixes two classes of bug: garbled/mis-encoded text, and subtitles that
+// freeze or stop updating when seeking (the player gets a fully-buffered local
+// VTT instead of loading a remote SRT flakily). See stremio-addon-sdk docs.
+const STREMIO_SUB_PROXY = 'http://127.0.0.1:11470/subtitles.vtt?from=';
+
 function mapSubs(items) {
-  return items
-    .filter((s) => s && s.url)
-    .map((s) => ({
-      id: String(s.id),
-      url: withEncoding(s.url, s.encoding),
-      lang: s.language || 'en',
-      name: `${s.display || s.language} / ${s.source || 'wyzie'}${s.ai ? ' (AI)' : ''}`,
-    }));
+  const seenUrls = new Set();
+  const usedIds = new Set();
+  const out = [];
+  items.forEach((s, idx) => {
+    if (!s || !s.url) return;
+    const fileUrl = withEncoding(s.url, s.encoding);
+    if (seenUrls.has(fileUrl)) return; // collapse duplicate files
+    seenUrls.add(fileUrl);
+    // Stable, unique id per subtitle so Stremio tracks the selection correctly
+    // across re-requests (duplicate ids make tracks vanish or swap on seek).
+    let id = 'wyzie-' + (s.source || 'src') + '-' + (s.id != null ? s.id : idx);
+    if (usedIds.has(id)) id += '-' + idx;
+    usedIds.add(id);
+    const lang = s.language || 'en';
+    out.push({
+      id,
+      url: STREMIO_SUB_PROXY + encodeURIComponent(fileUrl),
+      lang,
+      name: `${s.display || lang}${s.ai ? ' (AI)' : ''} / ${s.source || 'wyzie'}`,
+    });
+  });
+  return out;
 }
 
 // Surface a status/error to the user inside Stremio's subtitle picker. Stremio
