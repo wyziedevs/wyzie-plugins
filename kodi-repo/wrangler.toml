@@ -1,0 +1,20 @@
+name = "wyzie-kodi"
+account_id = "41693b70cad8d2ae3d3e348d373df7d6"
+compatibility_date = "2024-09-23"
+
+# Static-assets-only Worker: serves the built Kodi repository (dist/) — addons.xml,
+# its md5, the stable repository.wyzie.zip, and the versioned zips/. No script.
+# Rebuild with ./build.sh (or the Python fallback), then `wrangler deploy`.
+[assets]
+directory = "./dist"
+html_handling = "none"
+not_found_handling = "none"
+
+# Bind kodi.wyzie.io to this Worker (provisions the DNS record + cert on the
+# wyzie.io zone). The three URLs in repository.wyzie/addon.xml point here.
+[[routes]]
+pattern = "kodi.wyzie.io"
+custom_domain = true
+
+[observability]
+enabled = true
