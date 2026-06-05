@@ -9,7 +9,7 @@
   </requires>
   <extension point="xbmc.subtitle.module" library="service.py"/>
   <extension point="xbmc.addon.metadata">
-    <summary lang="en_GB">Wyzie Subs — free subtitles in 80+ languages</summary>
+    <summary lang="en_GB">Wyzie Subs: free subtitles in 80+ languages</summary>
     <description lang="en_GB">Subtitle service powered by Wyzie Subs (sub.wyzie.io). Aggregates OpenSubtitles, SubDL, Podnapisi and more. Get a free API key at store.wyzie.io/redeem.</description>
     <platform>all</platform>
     <license>MIT</license>

@@ -2,9 +2,9 @@
 Wyzie Subs subtitle service for Kodi.
 
 Implements Kodi's subtitle plugin protocol:
-  action=search   — list candidates
-  action=manualsearch — same as search with explicit query
-  action=download — fetch a chosen entry
+  action=search: list candidates
+  action=manualsearch: same as search with explicit query
+  action=download: fetch a chosen entry
 
 Get a free key at https://store.wyzie.io/redeem and set it in addon settings.
 """
@@ -98,10 +98,10 @@ def search():
         return
 
     if r.status_code == 401:
-        notify("Invalid Wyzie API key — re-enter in settings", 8000)
+        notify("Invalid Wyzie API key, re-enter in settings", 8000)
         return
     if r.status_code in (402, 429):
-        notify("Wyzie limit hit — upgrade at store.wyzie.io/pricing", 8000)
+        notify("Wyzie limit hit, upgrade at store.wyzie.io/#plans", 8000)
         return
     if not r.ok:
         log(f"http {r.status_code}: {r.text[:200]}", xbmc.LOGERROR)
@@ -119,7 +119,7 @@ def search():
         release = item.get("release") or item.get("fileName") or ""
         ai = " [AI]" if item.get("ai") else ""
 
-        list_item = xbmcgui.ListItem(label=label, label2=f"{source} — {release}{ai}")
+        list_item = xbmcgui.ListItem(label=label, label2=f"{source} - {release}{ai}")
         list_item.setArt({"icon": "0", "thumb": item.get("flagUrl", "")})
         list_item.setProperty("sync", "false")
         list_item.setProperty("hearing_imp",

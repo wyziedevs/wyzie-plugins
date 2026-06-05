@@ -1,4 +1,4 @@
-# Jellyfin — use the Bazarr provider
+# Jellyfin: use the Bazarr provider
 
 There is no native Jellyfin plugin in this repo (yet). Reach for Jellyfin users via [`../bazarr`](../bazarr) instead:
 

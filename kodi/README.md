@@ -1,4 +1,4 @@
-# Wyzie Subs — Kodi Addon
+# Wyzie Subs: Kodi Addon
 
 Subtitle service for Kodi 19+ (Matrix and later), LibreELEC, CoreELEC. Uses Kodi's standard `xbmc.subtitle.module` extension point.
 
@@ -22,9 +22,9 @@ kodi/
 
 ## How matching works
 
-Kodi exposes `VideoPlayer.IMDBNumber`, `VideoPlayer.Season`, `VideoPlayer.Episode` infolabels while playback is active — the addon reads those, hits `sub.wyzie.io/search`, and returns candidates. Languages are pulled from Kodi's selected subtitle languages and mapped to ISO 639-1.
+Kodi exposes `VideoPlayer.IMDBNumber`, `VideoPlayer.Season`, `VideoPlayer.Episode` infolabels while playback is active. The addon reads those, hits `sub.wyzie.io/search`, and returns candidates. Languages are pulled from Kodi's selected subtitle languages and mapped to ISO 639-1.
 
-Manual search (`action=manualsearch`) currently no-ops with a notification — Wyzie's API is IMDB/TMDB-id driven, not title-driven. A title→IMDB lookup via TMDB is on the roadmap.
+Manual search (`action=manualsearch`) currently no-ops with a notification. Wyzie's API is IMDB/TMDB-id driven, not title-driven. A title→IMDB lookup via TMDB is on the roadmap.
 
 ## Quota behaviour
 

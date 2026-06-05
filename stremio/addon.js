@@ -89,7 +89,7 @@ builder.defineSubtitlesHandler(async ({ type, id, config }) => {
           subtitles: [
             {
               id: 'wyzie-upsell',
-              url: 'https://store.wyzie.io/pricing',
+              url: 'https://store.wyzie.io/#plans',
               lang: 'eng',
               name:
                 res.status === 402

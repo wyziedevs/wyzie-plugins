@@ -5,7 +5,7 @@ Drop this file into Bazarr's `bazarr/subliminal_patch/providers/` directory and
 register the provider in `bazarr/subliminal_patch/extensions.py` (see README).
 
 Covers Plex, Jellyfin, Emby, Sonarr and Radarr by virtue of being a Bazarr
-provider — no per-server plugin needed.
+provider, no per-server plugin needed.
 
 Sign up for a free key at https://store.wyzie.io/redeem.
 """
@@ -61,7 +61,7 @@ class WyzieSubtitle(Subtitle):
 
 
 class WyzieProvider(Provider):
-    """Wyzie Subs — aggregates OpenSubtitles, SubDL, Podnapisi and more."""
+    """Wyzie Subs: aggregates OpenSubtitles, SubDL, Podnapisi and more."""
 
     languages = {Language.fromalpha2(l) for l in [
         "en", "es", "fr", "de", "it", "pt", "ru", "ja", "ko", "zh",
@@ -128,11 +128,11 @@ class WyzieProvider(Provider):
             raise AuthenticationError("Invalid Wyzie API key")
         if r.status_code == 402:
             logger.warning("Wyzie: paid balance depleted. "
-                           "Top up at https://store.wyzie.io/pricing")
+                           "Top up at https://store.wyzie.io/topup")
             return []
         if r.status_code == 429:
             logger.warning("Wyzie: daily free limit hit. "
-                           "Upgrade at https://store.wyzie.io/pricing")
+                           "Upgrade at https://store.wyzie.io/#plans")
             return []
         if not r.ok:
             logger.error("Wyzie %s: %s", r.status_code, r.text[:200])

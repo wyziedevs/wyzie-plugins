@@ -1,4 +1,4 @@
-# Plex — use the Bazarr provider
+# Plex: use the Bazarr provider
 
 Plex's legacy Agent / Channel plugin system has been **deprecated since Plex Media Server 1.20** (2020). New subtitle agents can't be installed the old way, and there is no public replacement SDK for third-party subtitle providers.
 
