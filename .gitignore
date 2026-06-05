@@ -7,3 +7,6 @@ dist/
 build/
 *.zip
 .wrangler/
+
+kodi-repo/dist/
+**/.wrangler/

@@ -4,5 +4,11 @@ account_id      = "41693b70cad8d2ae3d3e348d373df7d6"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
+# Bind stremio.wyzie.io to this worker (provisions DNS + cert on the wyzie.io
+# zone). The store /plugins page + docs link to https://stremio.wyzie.io/configure.
+[[routes]]
+pattern = "stremio.wyzie.io"
+custom_domain = true
+
 [observability]
 enabled = true
