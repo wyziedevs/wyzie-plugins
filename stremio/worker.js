@@ -14,10 +14,16 @@
  */
 
 const WYZIE_BASE = 'https://sub.wyzie.io';
+const WYZIE_API = 'https://api.wyzie.io';
+
+// Every issued Wyzie key is `wyzie-` + 32 lowercase-alphanumeric chars. Rejecting
+// anything else up front lets the config page tell the user the key is malformed
+// without any network round-trip.
+const API_KEY_RE = /^wyzie-[a-z0-9]{32}$/i;
 
 const MANIFEST = {
   id: 'io.wyzie.subs',
-  version: '1.1.0',
+  version: '1.2.0',
   name: 'Wyzie Subs',
   description:
     'Free subtitles in 125 languages from Wyzie Subs. Aggregates OpenSubtitles, SubDL, Podnapisi and more. Get a free key at store.wyzie.io/#plans.',
@@ -648,8 +654,31 @@ function parseConfig(seg) {
 }
 
 function parseStremioId(id) {
+  // Movies:  tt1234567
+  // Series:  tt1234567:1:2   (imdb : season : episode)
   const [imdb, season, episode] = id.split(':');
   return { imdb, season, episode };
+}
+
+// Stremio appends an "extras" segment before .json (e.g.
+//   /subtitles/series/tt123:1:2/videoHash=abc&videoSize=456&filename=Show.S01E02.mkv.json
+// ). It carries the identity of the actual video file the user is playing,
+// which is what lets subtitle providers match by hash / filename instead of
+// dumping every sub for the show and hoping the first one lines up. Parse it
+// as URL-encoded querystring pairs.
+function parseExtras(seg) {
+  if (!seg) return {};
+  const s = decodeURIComponent(seg.replace(/\.json$/, ''));
+  const out = {};
+  for (const pair of s.split('&')) {
+    if (!pair) continue;
+    const eq = pair.indexOf('=');
+    if (eq === -1) continue;
+    try {
+      out[decodeURIComponent(pair.slice(0, eq))] = decodeURIComponent(pair.slice(eq + 1));
+    } catch {}
+  }
+  return out;
 }
 
 // Ensure the subtitle file is fetched in the charset Wyzie reports for it, so
@@ -675,10 +704,47 @@ function withEncoding(rawUrl, encoding) {
 // VTT instead of loading a remote SRT flakily). See stremio-addon-sdk docs.
 const STREMIO_SUB_PROXY = 'http://127.0.0.1:11470/subtitles.vtt?from=';
 
-function mapSubs(items) {
+// Release-name tokens worth boosting on — quality tier, source, codec, HDR flag,
+// and audio codec. A subtitle whose release/fileName shares these with the
+// user's video is far more likely to be perfectly timed for it. Case-insensitive;
+// only whole-word matches count (so "10" won't spuriously match "10bit").
+const RELEASE_TOKEN_RE = /\b(?:2160p|1080p|720p|480p|hdr(?:10)?|dv|dolby|imax|remux|bluray|blu-ray|bdrip|brrip|webrip|web-dl|webdl|web|hdtv|hdrip|dvdrip|amzn|nf|nflx|dsnp|hmax|hulu|itunes|atvp|apple|x264|x265|h264|h265|hevc|avc|10bit|8bit|aac|ac3|dts|ddp?5?\.?1|truehd|atmos)\b/gi;
+
+function releaseTokens(text) {
+  if (!text) return new Set();
+  const m = String(text).toLowerCase().match(RELEASE_TOKEN_RE);
+  return new Set(m || []);
+}
+
+// Extract the release-group tag from a filename ("Show.S01E02.1080p.WEB-DL.x265-GROUP.mkv" → "group").
+// Groups are the strongest single signal for timing compatibility — sub authors
+// almost always target one group's release when they encode timings.
+function releaseGroup(text) {
+  if (!text) return null;
+  const m = String(text).match(/-([A-Za-z0-9]+)(?:\.[a-z0-9]{2,4})?$/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
+function scoreSub(sub, wantTokens, wantGroup) {
+  if (!wantTokens.size && !wantGroup) return 0;
+  const candidates = [sub.release, sub.fileName, ...(Array.isArray(sub.releases) ? sub.releases : [])]
+    .filter(Boolean)
+    .join(' ');
+  if (!candidates) return 0;
+  let score = 0;
+  const subTokens = releaseTokens(candidates);
+  for (const t of subTokens) if (wantTokens.has(t)) score += 1;
+  const subGroup = releaseGroup(candidates);
+  if (wantGroup && subGroup && subGroup === wantGroup) score += 5;
+  return score;
+}
+
+function mapSubs(items, filename) {
   const seenUrls = new Set();
   const usedIds = new Set();
-  const out = [];
+  const wantTokens = filename ? releaseTokens(filename) : new Set();
+  const wantGroup = filename ? releaseGroup(filename) : null;
+  const scored = [];
   items.forEach((s, idx) => {
     if (!s || !s.url) return;
     const fileUrl = withEncoding(s.url, s.encoding);
@@ -690,14 +756,23 @@ function mapSubs(items) {
     if (usedIds.has(id)) id += '-' + idx;
     usedIds.add(id);
     const lang = s.language || 'en';
-    out.push({
-      id,
-      url: STREMIO_SUB_PROXY + encodeURIComponent(fileUrl),
-      lang,
-      name: `${s.display || lang}${s.ai ? ' (AI)' : ''} / ${s.source || 'wyzie'}`,
+    const score = scoreSub(s, wantTokens, wantGroup);
+    scored.push({
+      score,
+      idx, // stable secondary key so equal-score subs keep provider order
+      out: {
+        id,
+        url: STREMIO_SUB_PROXY + encodeURIComponent(fileUrl),
+        lang,
+        // Prefix a ✓ on top-scoring matches so the user sees which subs the
+        // addon believes fit THIS release best. Cheap visual, no lang change.
+        name: `${score >= 5 ? '✓ ' : ''}${s.display || lang}${s.ai ? ' (AI)' : ''} / ${s.source || 'wyzie'}`,
+      },
     });
   });
-  return out;
+  // Stable sort: highest score first, ties preserve provider order.
+  scored.sort((a, b) => b.score - a.score || a.idx - b.idx);
+  return scored.map((x) => x.out);
 }
 
 // Surface a status/error to the user inside Stremio's subtitle picker. Stremio
@@ -715,7 +790,7 @@ function notice(origin, key, text) {
   ];
 }
 
-async function fetchSubtitles(type, id, config, origin) {
+async function fetchSubtitles(type, id, extras, config, origin) {
   const { apiKey, languages, hi } = config;
   if (!apiKey) {
     return { subtitles: notice(origin, 'nokey', 'Wyzie: no API key set. Open the addon settings to add one.'), cacheMaxAge: 60 };
@@ -724,22 +799,36 @@ async function fetchSubtitles(type, id, config, origin) {
   const { imdb, season, episode } = parseStremioId(id);
   if (!imdb?.startsWith('tt')) return { subtitles: [] };
 
+  // For series we MUST have both season and episode, or wyzie's /search
+  // returns "Both season and episode are required" (400) and Stremio shows
+  // nothing. This is defensive: Stremio always sends `tt:s:e` for episodes,
+  // but if we ever get called with a bare series id we degrade gracefully.
+  if (type === 'series' && (!season || !episode)) {
+    return { subtitles: notice(origin, 'noep', 'Wyzie: could not identify the episode. Restart the stream and try again.'), cacheMaxAge: 60 };
+  }
+
   const url = new URL('/search', WYZIE_BASE);
   url.searchParams.set('id', imdb);
   url.searchParams.set('key', apiKey);
   url.searchParams.set('format', 'srt');
   // Query every enabled source the key can reach for the widest coverage.
   url.searchParams.set('source', 'all');
-  if (type === 'series' && season && episode) {
+  if (type === 'series') {
     url.searchParams.set('season', season);
     url.searchParams.set('episode', episode);
   }
   if (languages) url.searchParams.set('language', languages);
   if (hi) url.searchParams.set('hi', 'true');
+  // NOTE on extras: Stremio sends { videoHash, videoSize, filename } when it
+  // knows them. We do NOT forward filename to /search — wyzie treats it as a
+  // hard filter (subs that don't literally mention that filename are DROPPED),
+  // which for the common case produces zero results and looks broken. Instead
+  // we use it below to re-rank the raw result set so the release that matches
+  // the file the user is playing floats to the top of the picker.
 
   try {
     const res = await fetch(url.toString(), {
-      headers: { 'User-Agent': 'wyzie-stremio/1.0' },
+      headers: { 'User-Agent': 'wyzie-stremio/1.2' },
     });
 
     if (!res.ok) {
@@ -756,7 +845,7 @@ async function fetchSubtitles(type, id, config, origin) {
 
     const data = await res.json();
     const list = Array.isArray(data) ? data : (data.subtitles ?? []);
-    const subs = mapSubs(list);
+    const subs = mapSubs(list, extras?.filename);
     if (!subs.length) {
       // Key works, but nothing matched this title. Say so rather than looking broken.
       return { subtitles: notice(origin, 'empty', 'Wyzie: no subtitles found for this title.'), cacheMaxAge: 600 };
@@ -794,23 +883,34 @@ export default {
       });
     }
 
-    // API-key validation proxy for the config page. Hits Wyzie /sources?key=
-    // (no quota cost) and returns just { valid, type }. Same-origin, so the
-    // page can call it without any CORS dance.
+    // API-key validation proxy for the config page. Hits the billing API's
+    // read-only /api/usage-limit endpoint (no quota cost, authoritative for
+    // key existence + tier) and returns just { valid, type }. Same-origin, so
+    // the page can call it without any CORS dance.
+    //
+    // Why not sub.wyzie.io/sources: that endpoint is a scraping worker that
+    // fans out to /api/usage-limit itself, and its `verification_unavailable`
+    // fallback (a real, occasional edge condition on same-zone worker fetches)
+    // was showing up in the config UI as "Could not verify the key" even for
+    // valid Pro keys. Going straight to api.wyzie.io removes that hop.
     if (pathname === '/validate') {
-      const k = new URL(request.url).searchParams.get('key') || '';
+      const k = (new URL(request.url).searchParams.get('key') || '').trim();
       if (!k) return json({ valid: false });
+      // Cheap client-side format check so we can answer "invalid" without a
+      // round-trip when the key can't possibly exist.
+      if (!API_KEY_RE.test(k)) return json({ valid: false, type: null });
       try {
-        const r = await fetch(WYZIE_BASE + '/sources?key=' + encodeURIComponent(k), {
-          headers: { 'User-Agent': 'wyzie-stremio/1.0' },
+        const r = await fetch(WYZIE_API + '/api/usage-limit?api_key=' + encodeURIComponent(k), {
+          headers: { 'User-Agent': 'wyzie-stremio/1.2', 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(5000),
         });
-        if (!r.ok) return json({ valid: null });
-        const d = await r.json();
-        const kk = (d && d.key) || {};
-        const v = kk.valid === true ? true : kk.valid === false ? false : null;
-        return json({ valid: v, type: kk.type || null });
+        if (r.status === 404 || r.status === 403) return json({ valid: false, type: null });
+        if (!r.ok) return json({ valid: null, type: null });
+        const d = await r.json().catch(() => ({}));
+        const type = d.key_type === 'paid' ? 'paid' : 'free';
+        return json({ valid: true, type });
       } catch {
-        return json({ valid: null });
+        return json({ valid: null, type: null });
       }
     }
 
@@ -831,17 +931,20 @@ export default {
       return json(MANIFEST);
     }
 
-    // subtitles: /<config?>/subtitles/<type>/<id>(.json) (/<extra>.json)?
-    // Stremio may append an extra segment (videoHash, videoSize) before .json.
+    // subtitles: /<config?>/subtitles/<type>/<id>(.json)(/<extras>.json)?
+    // Stremio appends an extras segment (videoHash, videoSize, filename)
+    // when it knows them — we forward `filename` to wyzie/search so the top
+    // pick lines up with the exact file the user is playing.
     const subIdx = parts.indexOf('subtitles');
     if (subIdx !== -1 && parts.length >= subIdx + 3) {
       const configSeg = subIdx >= 1 ? parts[0] : '';
       const type = parts[subIdx + 1];
-      // The id segment carries `.json` only when there is no trailing extra
+      // The id segment carries `.json` only when there is no trailing extras
       // segment; strip it defensively in both cases.
       const id = decodeURIComponent(parts[subIdx + 2].replace(/\.json$/, ''));
+      const extras = parts.length >= subIdx + 4 ? parseExtras(parts[subIdx + 3]) : {};
       const config = parseConfig(configSeg);
-      const result = await fetchSubtitles(type, id, config, reqUrl.origin);
+      const result = await fetchSubtitles(type, id, extras, config, reqUrl.origin);
       return json(result);
     }
 
