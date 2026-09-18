@@ -7,7 +7,7 @@
     "start": "node server.js",
     "dev:node": "node server.js",
     "dev": "wrangler dev worker.js",
-    "deploy": "wrangler deploy",
+    "deploy": "npx --yes wrangler@4 deploy",
     "test": "node ../tests/stremio.e2e.cjs"
   },
   "dependencies": {

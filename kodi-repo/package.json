@@ -3,6 +3,6 @@
   "private": true,
   "scripts": {
     "build": "python build.py",
-    "deploy": "python build.py && wrangler deploy"
+    "deploy": "python build.py && npx --yes wrangler@4 deploy"
   }
 }
