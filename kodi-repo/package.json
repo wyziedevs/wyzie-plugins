@@ -1,0 +1,8 @@
+{
+  "name": "wyzie-kodi-repo",
+  "private": true,
+  "scripts": {
+    "build": "python build.py",
+    "deploy": "python build.py && wrangler deploy"
+  }
+}

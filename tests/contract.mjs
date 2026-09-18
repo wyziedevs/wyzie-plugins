@@ -167,10 +167,11 @@ async function main() {
   {
     const u = new URL('/search', BASE);
     u.searchParams.set('id', MOVIE_IMDB);
-    u.searchParams.set('key', 'wyzie-thiskeyisdefinitelynotrealatall00');
+    u.searchParams.set('key', 'wyzie-00000000000000000000000000000000');
     const { status } = await getJson(u);
-    // Plugins treat 401/403 as "no subs" (Bazarr raises AuthenticationError on 401).
-    ok('rejected (401/403)', status === 401 || status === 403, `got ${status}`);
+    // An invalid key is a 403 (401 is reserved for a missing key). Plugins
+    // surface both as a bad-key error.
+    ok('rejected (403)', status === 403, `got ${status}`);
   }
 
   console.log(`\n${'='.repeat(40)}\n${pass} passed, ${fail} failed`);

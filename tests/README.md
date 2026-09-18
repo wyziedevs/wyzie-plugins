@@ -24,7 +24,7 @@ $env:WYZIE_KEY="wyzie-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 ```
 
 > Use a standard issued key (`wyzie-` + 32 hex). Vanity keys (e.g.
-> `wyzie-heyxprime-infinite`) and legacy `paid-…` keys fail the `source=all`
+> `wyzie-<custom-name>`) and legacy `paid-…` keys fail the `source=all`
 > prefilter; see "Known issues" below.
 
 ## 1. Shared API contract (covers all three at once)
@@ -65,8 +65,8 @@ python tests/bazarr_test.py
 ```
 Stubs the subliminal/subzero module surface and drives the real
 `WyzieProvider.list_subtitles` / `download_subtitle` against the live API with
-a fake Movie/Episode. (The `Wyzie 403:` log line during the run is the
-provider's own logging on the deliberate bad-key test, expected.)
+a fake Movie/Episode. (The deliberate bad-key test expects the API's 403 to surface as an
+`AuthenticationError`.)
 
 ## 4. Kodi: service logic, no Kodi install
 

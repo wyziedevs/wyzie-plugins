@@ -41,6 +41,15 @@ def notify(msg, time_ms=5000):
     xbmcgui.Dialog().notification("Wyzie Subs", msg, time=time_ms)
 
 
+def _no_results(r):
+    """True when a 400 response is Wyzie's "No subtitles found" answer."""
+    try:
+        message = str(r.json().get("message", ""))
+    except Exception:
+        message = r.text or ""
+    return "no subtitles found" in message.lower()
+
+
 def get_imdb_and_episode():
     """Pull IMDB id + season/episode from Kodi InfoLabels."""
     imdb = xbmc.getInfoLabel("VideoPlayer.IMDBNumber")
@@ -97,11 +106,16 @@ def search():
         notify("Network error contacting Wyzie")
         return
 
-    if r.status_code == 401:
+    # 401 = key missing, 403 = key invalid or on hold.
+    if r.status_code in (401, 403):
         notify("Invalid Wyzie API key, re-enter in settings", 8000)
         return
     if r.status_code in (402, 429):
         notify("Wyzie limit hit, upgrade at store.wyzie.io/#plans", 8000)
+        return
+    if r.status_code == 400 and _no_results(r):
+        # Wyzie answers 400 "No subtitles found" rather than an empty list.
+        xbmcplugin.endOfDirectory(HANDLE)
         return
     if not r.ok:
         log(f"http {r.status_code}: {r.text[:200]}", xbmc.LOGERROR)

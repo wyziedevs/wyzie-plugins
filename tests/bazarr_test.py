@@ -144,15 +144,16 @@ def main():
         ok("content downloaded", content is not None and len(content) > 50,
            f"len={0 if content is None else len(content)}")
 
-    # Bad key -> AuthenticationError on 401 (or empty list if API returns 403)
+    # Bad key -> the API answers 403 and the provider raises AuthenticationError.
     print("\nInvalid key handling:")
-    bad = wyzie.WyzieProvider(api_key="wyzie-thiskeyisnotrealatallnope0000000")
+    bad = wyzie.WyzieProvider(api_key="wyzie-00000000000000000000000000000000")
     bad.initialize()
     try:
         res = bad.list_subtitles(movie, {en})
-        ok("bad key returns empty (403 path)", res == [], f"got {len(res)} items")
+        ok("bad key raises AuthenticationError (403)", False,
+           f"no exception, got {len(res)} items")
     except Exception as e:
-        ok("bad key raises AuthenticationError (401 path)",
+        ok("bad key raises AuthenticationError (403)",
            e.__class__.__name__ == "AuthenticationError", e.__class__.__name__)
     finally:
         bad.terminate()

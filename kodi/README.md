@@ -5,7 +5,7 @@ Subtitle service for Kodi 19+ (Matrix and later), LibreELEC, CoreELEC. Uses Kodi
 ## Install
 
 1. Get a free key at [store.wyzie.io/redeem](https://store.wyzie.io/redeem).
-2. Zip the `kodi/` folder as `service.subtitles.wyzie-1.0.0.zip` (the folder must contain `addon.xml`).
+2. Zip the `kodi/` folder as `service.subtitles.wyzie-1.0.1.zip` (the folder must contain `addon.xml`).
 3. In Kodi: **Settings → Add-ons → Install from zip file** → choose the zip.
 4. **Settings → Player → Language → Default subtitle service** → Wyzie Subs.
 5. Open Wyzie's addon settings, paste your API key.

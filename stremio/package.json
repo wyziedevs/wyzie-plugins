@@ -1,6 +1,6 @@
 {
   "name": "wyzie-stremio",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Wyzie Subs subtitle addon for Stremio",
   "main": "server.js",
   "scripts": {
@@ -12,6 +12,10 @@
   },
   "dependencies": {
     "stremio-addon-sdk": "^1.6.10"
+  },
+  "overrides": {
+    "path-to-regexp": "0.1.13",
+    "tmp": "^0.2.7"
   },
   "engines": {
     "node": ">=18"

@@ -4,7 +4,7 @@ const WYZIE_BASE = process.env.WYZIE_BASE || 'https://sub.wyzie.io';
 
 const manifest = {
   id: 'io.wyzie.subs',
-  version: '1.0.0',
+  version: '1.2.0',
   name: 'Wyzie Subs',
   description:
     'Free subtitles in 80+ languages from Wyzie Subs. Aggregates OpenSubtitles, SubDL, Podnapisi and more. Get a free key at store.wyzie.io/redeem.',
@@ -77,10 +77,12 @@ builder.defineSubtitlesHandler(async ({ type, id, config }) => {
   if (config.hi) url.searchParams.set('hi', 'true');
   // Stremio's player handles srt and vtt natively; ask Wyzie to bias srt.
   url.searchParams.set('format', 'srt');
+  // Query every enabled source the key can reach for the widest coverage.
+  url.searchParams.set('source', 'all');
 
   try {
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'wyzie-stremio/1.0' },
+      headers: { 'User-Agent': 'wyzie-stremio/1.2' },
     });
     if (!res.ok) {
       // 402/429: surface a single "subtitle" that links the user to the upgrade page.
@@ -100,6 +102,26 @@ builder.defineSubtitlesHandler(async ({ type, id, config }) => {
           cacheMaxAge: 60,
         };
       }
+      // 401 = key missing, 403 = key invalid or on hold. Say so instead of
+      // showing an empty list.
+      if (res.status === 401 || res.status === 403) {
+        return {
+          subtitles: [
+            {
+              id: 'wyzie-notice-s' + res.status,
+              url: 'https://store.wyzie.io/redeem',
+              lang: 'eng',
+              name:
+                res.status === 401
+                  ? 'Wyzie: API key missing or unauthorized. Check the addon settings.'
+                  : 'Wyzie: invalid API key. Re-check it in the addon settings.',
+            },
+          ],
+          cacheMaxAge: 60,
+        };
+      }
+      // A 400 "No subtitles found" is a normal empty result; other errors also
+      // degrade to an empty list.
       return { subtitles: [] };
     }
     const data = await res.json();

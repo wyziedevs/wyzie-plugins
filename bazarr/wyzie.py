@@ -28,6 +28,15 @@ logger = logging.getLogger(__name__)
 WYZIE_BASE = os.environ.get("WYZIE_BASE", "https://sub.wyzie.io")
 
 
+def _no_results(r) -> bool:
+    """True when a 400 response is Wyzie's "No subtitles found" answer."""
+    try:
+        message = str(r.json().get("message", ""))
+    except Exception:
+        message = r.text or ""
+    return "no subtitles found" in message.lower()
+
+
 class WyzieSubtitle(Subtitle):
     provider_name = "wyzie"
     hash_verifiable = False
@@ -124,7 +133,8 @@ class WyzieProvider(Provider):
             logger.error("Wyzie request failed: %s", e)
             return []
 
-        if r.status_code == 401:
+        # 401 = key missing, 403 = key invalid or on hold.
+        if r.status_code in (401, 403):
             raise AuthenticationError("Invalid Wyzie API key")
         if r.status_code == 402:
             logger.warning("Wyzie: paid balance depleted. "
@@ -133,6 +143,9 @@ class WyzieProvider(Provider):
         if r.status_code == 429:
             logger.warning("Wyzie: daily free limit hit. "
                            "Upgrade at https://store.wyzie.io/#plans")
+            return []
+        if r.status_code == 400 and _no_results(r):
+            # Wyzie answers 400 "No subtitles found" rather than an empty list.
             return []
         if not r.ok:
             logger.error("Wyzie %s: %s", r.status_code, r.text[:200])

@@ -831,6 +831,16 @@ async function fetchSubtitles(type, id, extras, config, origin) {
       headers: { 'User-Agent': 'wyzie-stremio/1.2' },
     });
 
+    if (res.status === 400) {
+      // Wyzie answers 400 "No subtitles found" rather than an empty list. That
+      // is a working key with no matches, not a service error. Any other 400
+      // (bad params) still falls through to the error notice below.
+      const body = await res.json().catch(() => null);
+      if (/no subtitles found/i.test(String(body?.message ?? ''))) {
+        return { subtitles: notice(origin, 'empty', 'Wyzie: no subtitles found for this title.'), cacheMaxAge: 600 };
+      }
+    }
+
     if (!res.ok) {
       // Tell the user what happened instead of showing an empty list.
       const MESSAGES = {
