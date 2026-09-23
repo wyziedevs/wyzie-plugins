@@ -21,13 +21,43 @@ A first-class PR upstreaming the provider into Bazarr is the long-term plan; for
 | Field | Default | Description |
 | ----- | ------- | ----------- |
 | `api_key` | (none) | Wyzie key (required). |
-| `prefer_hi` | false | Prefer hearing-impaired subs. |
-| `sources` | `all` | Comma list of providers to query, or `all`. |
+| `prefer_hi` | false | List hearing-impaired (SDH) subtitles first. It does not send `hi=true` (a hard filter on Wyzie that would drop every other subtitle); Bazarr's language-profile HI setting still decides what gets downloaded. |
+| `sources` | `all` | `all`, or a comma list of source codenames (below). |
 
-## Quota behaviour
+### Sources
 
-- HTTP 402 (paid balance empty) and 429 (daily limit hit) are logged with a link to `store.wyzie.io/pricing` and return an empty list; Bazarr will fall back to other providers, no crash.
-- HTTP 401 raises `AuthenticationError` so the user is prompted to re-enter the key.
+Wyzie names its providers by codename. `all` (the default) gives each key everything its tier allows, so it never fails on tier.
+
+| Codename | Provider | Tier |
+| -------- | -------- | ---- |
+| `charlie` | OpenSubtitles | free and Pro |
+| `lima` | IndexSubtitle | free and Pro |
+| `foxtrot` | Jimaku (anime) | Pro |
+| `india` | YIFY | Pro |
+| `juliet` | Ajatt-Tools (anime) | Pro |
+| `mike` | anime | Pro |
+| `november` | anime | Pro |
+
+The live list is [sub.wyzie.io/sources](https://sub.wyzie.io/sources). A free key that names only Pro sources gets 403 "Provider not available on free plan"; a name that isn't live (a typo, or a retired provider such as the old `alpha`/SubDL) gets 400 "Invalid source". Both are logged with the fix and raised as a `ConfigurationError`, so Bazarr shows the provider as throttled (with the reason) instead of silently finding nothing.
+
+## Matching
+
+The provider searches by the video's IMDb id (for episodes, the **show's** IMDb id plus season and episode), falling back to the TMDB id. Every result is for that title, so it is credited `imdb_id` / `series_imdb_id` (which Bazarr's scoring expands to title/series and year) plus season and episode. The release names Wyzie reports are run through guessit, like other subliminal providers, so a subtitle made for the same source, resolution, codecs or release group as your file scores higher. That is what lets Wyzie results clear Bazarr's minimum score for automatic downloads instead of only showing up in manual search.
+
+## Errors and quota
+
+Bazarr throttles a provider by exception type, so each refusal maps to what you need to do:
+
+| Response | Raised | Bazarr backs off |
+| -------- | ------ | ---------------- |
+| 403 "Invalid API key", 401 | `AuthenticationError` | 12 hours |
+| 403 "Key on hold" | `WyzieKeyOnHold`: verify your site at [store.wyzie.io/verify](https://store.wyzie.io/verify), or contact support | 10 minutes, then resumes on its own |
+| 403 "Provider not available on free plan", 400 "Invalid source" | `ConfigurationError` | 12 hours |
+| 402 balance used up | `DownloadLimitExceeded`, with the [top-up](https://store.wyzie.io/topup) link | 3 hours |
+| 429 daily limit | `DownloadLimitExceeded`, with the reset time and the [upgrade](https://store.wyzie.io/#plans) link | 3 hours |
+| 503 | `ServiceUnavailable` | 20 minutes |
+
+A 400 "No subtitles found" is just an empty result. Each subtitle download link costs one request from the key, like a search; an expired link (401) is skipped and Bazarr moves on to the next subtitle.
 
 ## Status
 

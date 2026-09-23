@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="service.subtitles.wyzie"
        name="Wyzie Subs"
-       version="1.0.1"
+       version="1.0.2"
        provider-name="Wyzie">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -10,12 +10,18 @@
   <extension point="xbmc.subtitle.module" library="service.py"/>
   <extension point="xbmc.addon.metadata">
     <summary lang="en_GB">Wyzie Subs: free subtitles in 80+ languages</summary>
-    <description lang="en_GB">Subtitle service powered by Wyzie Subs (sub.wyzie.io). Aggregates OpenSubtitles, SubDL, Podnapisi and more. Get a free API key at store.wyzie.io/redeem.</description>
+    <description lang="en_GB">Subtitle service powered by Wyzie Subs (sub.wyzie.io). Subtitles from OpenSubtitles, IndexSubtitle and, on Pro keys, five more providers, through the Wyzie Subs API. Get a free API key at store.wyzie.io/redeem.</description>
+    <news>v1.0.2
+- Finds the right title for TMDB-scraped movies and shows (reads the IMDb and TMDB ids separately; episodes use the show's id)
+- Manual search by title (e.g. "The Martian 2015" or "Severance S01E02")
+- Searches every provider your key allows (free: OpenSubtitles and IndexSubtitle)
+- "Prefer hearing-impaired" now lists SDH subtitles first instead of hiding the rest
+- Clear messages for a key on hold, Pro-only sources, used-up balance and the daily limit</news>
     <platform>all</platform>
     <license>MIT</license>
-    <source>https://github.com/wyzie/wyzie-plugins</source>
+    <source>https://github.com/wyziedevs/wyzie-plugins</source>
     <website>https://sub.wyzie.io</website>
-    <forum>https://discord.gg/wyzie</forum>
+    <forum>https://discord.gg/2mxraHBVtB</forum>
     <assets>
       <icon>resources/icon.png</icon>
     </assets>

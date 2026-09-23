@@ -1,6 +1,6 @@
 # Wyzie Subs: Stremio Addon
 
-Subtitle addon for Stremio backed by [Wyzie Subs](https://sub.wyzie.io). Aggregates OpenSubtitles, SubDL, Podnapisi and more in one click.
+Subtitle addon for Stremio backed by [Wyzie Subs](https://sub.wyzie.io): subtitles from OpenSubtitles, IndexSubtitle and, on Pro keys, five more providers, through the Wyzie Subs API.
 
 ## Install (hosted)
 
@@ -23,7 +23,7 @@ Then open `http://127.0.0.1:7000/configure`, paste your key, and install into St
 | ----- | ----------- |
 | **apiKey** | Wyzie key. Free at [store.wyzie.io/redeem](https://store.wyzie.io/redeem). |
 | **languages** | ISO 639-1 codes, comma-separated. Empty = all. |
-| **hi** | Prefer hearing-impaired subs. |
+| **hi** | Prefer hearing-impaired (SDH) subs: they are listed first, the rest are still shown. |
 
 ## Publish to the central catalog
 
@@ -35,9 +35,17 @@ Set `PUBLISH_URL=https://your-public-url/manifest.json` and start the server. Th
 | ------- | --------------- |
 | `id` (e.g. `tt1234567` or `tt1234567:1:2`) | `id`, `season`, `episode` |
 | addon config `languages` | `language` |
-| addon config `hi` | `hi` |
-| (constant) | `format=srt` |
+| (constant) | `format=srt`, `source=all` |
 
-## Quota behaviour
+`hi` is deliberately **not** sent: on Wyzie it is a hard filter that returns only SDH subtitles. The `hi` option sorts SDH subtitles first instead. Wyzie's ISO 639-1 `language` is mapped to the ISO 639-2/B code Stremio expects (`en` → `eng`, `fr` → `fre`, `de` → `ger`, …) so Stremio shows the language name and can auto-select it.
 
-When Wyzie returns 402 (paid balance empty) or 429 (free daily cap hit), the addon surfaces a single pseudo-subtitle pointing the user at `store.wyzie.io/pricing`, converting a dead-end into an upgrade.
+## Errors and quota
+
+Instead of an empty list, the hosted addon (`worker.js`) shows one notice row (selecting it also shows the message on screen) that says what Wyzie answered. The Node SDK variant (`addon.js`) shows the same messages, except that no results is simply an empty list.
+
+- 403 "Key on hold": verify your site at [store.wyzie.io/verify](https://store.wyzie.io/verify), or contact support. The config page also flags a held key when you paste it.
+- 403 "Provider not available on free plan": the chosen sources need Pro.
+- 403 "Invalid API key": re-check the key.
+- 402 (Pro balance used up): top up at [store.wyzie.io/topup](https://store.wyzie.io/topup).
+- 429 (daily limit): when it resets (from `reset_at`, in UTC) and the upgrade link; plans are at [store.wyzie.io/#plans](https://store.wyzie.io/#plans).
+- 400 "No subtitles found": "no subtitles found for this title".

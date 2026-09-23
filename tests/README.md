@@ -65,8 +65,11 @@ python tests/bazarr_test.py
 ```
 Stubs the subliminal/subzero module surface and drives the real
 `WyzieProvider.list_subtitles` / `download_subtitle` against the live API with
-a fake Movie/Episode. (The deliberate bad-key test expects the API's 403 to surface as an
-`AuthenticationError`.)
+a fake Movie/Episode. Offline checks (no key needed) run first: which exception
+each refusal raises (invalid key -> `AuthenticationError`, key on hold ->
+`WyzieKeyOnHold`, Pro-only sources / invalid source -> `ConfigurationError`,
+402/429 -> `DownloadLimitExceeded`), the IMDb/TMDB id and release-name matches,
+and the hearing-impaired ordering.
 
 ## 4. Kodi: service logic, no Kodi install
 
@@ -74,8 +77,9 @@ a fake Movie/Episode. (The deliberate bad-key test expects the API's 403 to surf
 python tests/kodi_test.py
 ```
 Stubs the `xbmc*` modules and drives the real `search()` / `download()` logic:
-language mapping, IMDB extraction, request building, result→ListItem mapping,
-and the actual file download.
+language mapping, id extraction (IMDb vs TMDB, the show's ids for episodes),
+manual title search, refusal messages, request building, result→ListItem
+mapping, and the actual file download. The pure checks run without a key.
 
 ### The one manual check worth installing an app for
 

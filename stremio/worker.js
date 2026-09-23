@@ -26,7 +26,7 @@ const MANIFEST = {
   version: '1.2.0',
   name: 'Wyzie Subs',
   description:
-    'Free subtitles in 125 languages from Wyzie Subs. Aggregates OpenSubtitles, SubDL, Podnapisi and more. Get a free key at store.wyzie.io/#plans.',
+    'Subtitles from OpenSubtitles, IndexSubtitle and, on Pro keys, five more providers, through the Wyzie Subs API. Get a free key at store.wyzie.io/#plans.',
   logo: 'https://i.postimg.cc/L5ppKYC5/cclogo.png',
   resources: ['subtitles'],
   types: ['movie', 'series'],
@@ -49,11 +49,39 @@ const MANIFEST = {
     {
       key: 'hi',
       type: 'checkbox',
-      title: 'Prefer hearing-impaired subtitles',
+      title: 'Prefer hearing-impaired subtitles (listed first, others still shown)',
       required: false,
     },
   ],
 };
+
+// ISO 639-1 (what Wyzie returns in `language`) -> ISO 639-2/B, the three-letter
+// code Stremio expects in a subtitle's `lang`. With it Stremio shows the
+// language name instead of a bare code and can auto-select the user's preferred
+// subtitle language. Unknown codes pass through unchanged.
+const ISO639_2B = Object.fromEntries(
+  (
+    'en:eng es:spa fr:fre de:ger it:ita pt:por ru:rus ja:jpn ko:kor zh:chi ar:ara hi:hin nl:dut ' +
+    'pl:pol tr:tur sv:swe da:dan fi:fin no:nor nb:nob nn:nno cs:cze el:gre he:heb th:tha id:ind ' +
+    'vi:vie ro:rum hu:hun uk:ukr bg:bul hr:hrv sr:srp sk:slo sl:slv ms:may fa:per ca:cat et:est ' +
+    'lv:lav lt:lit af:afr sq:alb am:amh hy:arm az:aze eu:baq be:bel bn:ben bs:bos my:bur km:khm ' +
+    'ka:geo gl:glg gu:guj ha:hau is:ice ig:ibo ga:gle jv:jav kn:kan kk:kaz ky:kir lo:lao lb:ltz ' +
+    'mk:mac mg:mlg ml:mal mt:mlt mi:mao mr:mar mn:mon ne:nep ps:pus pa:pan qu:que sm:smo gd:gla ' +
+    'sn:sna sd:snd si:sin so:som st:sot su:sun sw:swa tg:tgk ta:tam tt:tat te:tel ti:tir to:ton ' +
+    'tk:tuk ur:urd ug:uig uz:uzb cy:wel fy:fry xh:xho yi:yid yo:yor zu:zul ny:nya co:cos fo:fao ' +
+    'fj:fij ht:hat ku:kur oc:oci or:ori rw:kin sa:san br:bre bo:tib dv:div gn:grn kl:kal ln:lin ' +
+    'om:orm rm:roh ss:ssw ts:tso tn:tsn ve:ven wo:wol ak:aka lg:lug ki:kik ay:aym dz:dzo ee:ewe ' +
+    'ff:ful tl:tgl la:lat eo:epo'
+  )
+    .split(' ')
+    .map((pair) => pair.split(':')),
+);
+
+function stremioLang(code) {
+  const raw = String(code || '').trim();
+  const c = raw.toLowerCase();
+  return ISO639_2B[c] || ISO639_2B[c.split(/[-_]/)[0]] || raw || 'eng';
+}
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -161,6 +189,8 @@ function configPage(prefill) {
   input[type=text]::placeholder { color: var(--type-footer); }
   input[type=text]:focus { border-color: var(--primary-500); box-shadow: 0 0 0 3px var(--primary-ring); }
   .hint { font-size: 12px; color: var(--type-footer); margin-top: 7px; }
+  .hint[hidden] { display: none; }
+  .key-msg { color: #fbbf24; }
 
   /* API-key validation status, shown inside the input on the right */
   .input-status { position: absolute; right: 11px; top: 50%; transform: translateY(-50%); display: none; align-items: center; pointer-events: none; }
@@ -279,7 +309,7 @@ function configPage(prefill) {
       </div>
     </div>
     <h2 class="title">Add Wyzie Subs to Stremio</h2>
-    <p class="lead">Free subtitles in 125 languages, aggregated from OpenSubtitles, SubDL, Podnapisi and more. Set your options below, then install.</p>
+    <p class="lead">Subtitles from OpenSubtitles, IndexSubtitle and, on Pro keys, five more providers, through the Wyzie Subs API. Set your options below, then install.</p>
 
     <div class="field">
       <label for="apiKey">Wyzie API key</label>
@@ -288,6 +318,7 @@ function configPage(prefill) {
         <input id="apiKey" class="has-icon" type="text" placeholder="wyzie-..." autocomplete="off" spellcheck="false" aria-describedby="keyStatus" />
         <span id="keyStatus" class="input-status" hidden></span>
       </div>
+      <div id="keyMsg" class="hint key-msg" hidden>This key is on hold. <a href="https://store.wyzie.io/verify" target="_blank" rel="noopener">Verify your site</a> to reinstate it, or <a href="https://store.wyzie.io/contact" target="_blank" rel="noopener">contact support</a>. You can install now; subtitles resume once it is released.</div>
       <div class="hint">No key yet? <a href="https://store.wyzie.io/#plans" target="_blank" rel="noopener">Grab a free one</a> (1,000 requests/day).</div>
     </div>
 
@@ -317,6 +348,7 @@ function configPage(prefill) {
 
     <div class="field">
       <label class="check"><input id="hi" type="checkbox" /><span>Prefer hearing-impaired (SDH) subtitles</span></label>
+      <div class="hint">SDH subtitles are listed first; the others are still shown.</div>
     </div>
 
     <button id="install" class="btn primary">
@@ -500,8 +532,8 @@ function configPage(prefill) {
   // API-key verification. The key is validated against Wyzie /sources (which
   // costs no quota) through the worker's own /validate proxy, so the user can
   // only continue once the key is confirmed valid.
-  var keyStatusEl = $('keyStatus');
-  var keyState = 'idle'; // idle | checking | valid | invalid | warn
+  var keyStatusEl = $('keyStatus'), keyMsgEl = $('keyMsg');
+  var keyState = 'idle'; // idle | checking | valid | held | invalid | warn
   var debounceT = null;
   var ICONS = {
     loader: '<svg class="svg spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>',
@@ -511,12 +543,13 @@ function configPage(prefill) {
   };
   function setKeyStatus(state, msg, icon){
     keyState = state;
+    keyMsgEl.hidden = state !== 'held';
     if (state === 'idle') {
       keyStatusEl.hidden = true; keyStatusEl.className = 'input-status'; keyStatusEl.innerHTML = '';
       keyStatusEl.removeAttribute('title'); keyStatusEl.removeAttribute('aria-label');
       key.classList.remove('has-status');
     } else {
-      keyStatusEl.hidden = false; keyStatusEl.className = 'input-status ' + state;
+      keyStatusEl.hidden = false; keyStatusEl.className = 'input-status ' + (state === 'held' ? 'warn' : state);
       keyStatusEl.innerHTML = ICONS[icon] || '';
       keyStatusEl.setAttribute('title', msg);
       keyStatusEl.setAttribute('aria-label', msg);
@@ -529,7 +562,9 @@ function configPage(prefill) {
       .then(function(r){ return r.json(); })
       .then(function(d){
         if (key.value.trim() !== v) return; // a newer keystroke superseded this
-        if (d && d.valid === true) setKeyStatus('valid', 'Valid ' + (d.type === 'paid' ? 'Pro' : 'free') + ' key', 'valid');
+        // "held" is optional: an older /validate (or billing API) omits it.
+        if (d && d.valid === true && d.held === true) setKeyStatus('held', 'Key on hold: verify your site at store.wyzie.io/verify (or contact support)', 'warn');
+        else if (d && d.valid === true) setKeyStatus('valid', 'Valid ' + (d.type === 'paid' ? 'Pro' : 'free') + ' key', 'valid');
         else if (d && d.valid === false) setKeyStatus('invalid', 'Invalid API key', 'invalid');
         else setKeyStatus('warn', 'Could not verify key, check your connection', 'warn');
       })
@@ -543,7 +578,9 @@ function configPage(prefill) {
     debounceT = setTimeout(function(){ checkKey(v); }, 450);
   }
 
-  function valid(){ return keyState === 'valid'; }
+  // A held key is a real key (it only needs its site verified), so installing
+  // is allowed; the addon shows the hold in the subtitle list until released.
+  function valid(){ return keyState === 'valid' || keyState === 'held'; }
   function refresh(){
     var ok = valid();
     installBtn.disabled = !ok; webBtn.disabled = !ok; copyBtn.disabled = !ok;
@@ -739,7 +776,10 @@ function scoreSub(sub, wantTokens, wantGroup) {
   return score;
 }
 
-function mapSubs(items, filename) {
+// preferHi: list hearing-impaired (SDH) subtitles first. This is done here
+// rather than with Wyzie's `hi=true`, which is a hard filter that would drop
+// every non-SDH subtitle.
+function mapSubs(items, filename, preferHi) {
   const seenUrls = new Set();
   const usedIds = new Set();
   const wantTokens = filename ? releaseTokens(filename) : new Set();
@@ -755,9 +795,11 @@ function mapSubs(items, filename) {
     let id = 'wyzie-' + (s.source || 'src') + '-' + (s.id != null ? s.id : idx);
     if (usedIds.has(id)) id += '-' + idx;
     usedIds.add(id);
-    const lang = s.language || 'en';
+    const lang = stremioLang(s.language || 'en');
     const score = scoreSub(s, wantTokens, wantGroup);
+    const hiRank = preferHi && s.isHearingImpaired ? 0 : 1;
     scored.push({
+      hiRank,
       score,
       idx, // stable secondary key so equal-score subs keep provider order
       out: {
@@ -766,12 +808,13 @@ function mapSubs(items, filename) {
         lang,
         // Prefix a ✓ on top-scoring matches so the user sees which subs the
         // addon believes fit THIS release best. Cheap visual, no lang change.
-        name: `${score >= 5 ? '✓ ' : ''}${s.display || lang}${s.ai ? ' (AI)' : ''} / ${s.source || 'wyzie'}`,
+        name: `${score >= 5 ? '✓ ' : ''}${s.display || lang}${s.isHearingImpaired ? ' (SDH)' : ''}${s.ai ? ' (AI)' : ''} / ${s.source || 'wyzie'}`,
       },
     });
   });
-  // Stable sort: highest score first, ties preserve provider order.
-  scored.sort((a, b) => b.score - a.score || a.idx - b.idx);
+  // Stable sort: SDH first when preferred, then highest score, ties keep
+  // provider order.
+  scored.sort((a, b) => a.hiRank - b.hiRank || b.score - a.score || a.idx - b.idx);
   return scored.map((x) => x.out);
 }
 
@@ -788,6 +831,53 @@ function notice(origin, key, text) {
       name: text,
     },
   ];
+}
+
+// "HH:MM UTC" for a reset_at Unix timestamp (seconds), else midnight UTC.
+function resetText(resetAt) {
+  const t = Number(resetAt);
+  if (!Number.isFinite(t) || t <= 0) return 'midnight UTC';
+  return new Date(t * 1000).toISOString().slice(11, 16) + ' UTC';
+}
+
+function bareLink(url, fallback) {
+  return String(url || fallback).replace(/^https?:\/\//, '');
+}
+
+// What to tell the user about a refused /search. A 403 means different things,
+// so the body decides: a held key carries `reinstate` / "Key on hold", a
+// Pro-only source says "free plan", and only "Invalid API key" is a bad key.
+function refusalNotice(status, body) {
+  const message = String(body?.message ?? '');
+  const low = message.toLowerCase();
+  if (status === 403) {
+    if (body?.reinstate || low.includes('key on hold')) {
+      return { key: 'held', text: 'Wyzie: key on hold. Verify your site at store.wyzie.io/verify (or contact support).' };
+    }
+    if (low.includes('free plan')) {
+      return { key: 'pro', text: 'Wyzie: the chosen sources need a Pro key. Free keys get OpenSubtitles and IndexSubtitle.' };
+    }
+    if (low.includes('invalid api key')) {
+      return { key: 's403', text: 'Wyzie: invalid API key. Re-check it in the addon settings.' };
+    }
+    return { key: 's403', text: 'Wyzie: request refused (' + (message || '403') + ').' };
+  }
+  if (status === 401) {
+    return { key: 's401', text: 'Wyzie: no API key sent. Check the addon settings.' };
+  }
+  if (status === 402) {
+    return { key: 's402', text: 'Wyzie: Pro balance used up. Top up at ' + bareLink(body?.topup, 'store.wyzie.io/topup') };
+  }
+  if (status === 429) {
+    return {
+      key: 's429',
+      text: 'Wyzie: daily limit reached, resets at ' + resetText(body?.reset_at) + '. Upgrade at ' + bareLink(body?.upgrade, 'store.wyzie.io/#plans'),
+    };
+  }
+  if (status === 503) {
+    return { key: 's503', text: 'Wyzie: service briefly unavailable. Try again in a moment.' };
+  }
+  return { key: 's' + status, text: 'Wyzie: service error ' + status + '. Try again later.' };
 }
 
 async function fetchSubtitles(type, id, extras, config, origin) {
@@ -818,7 +908,8 @@ async function fetchSubtitles(type, id, extras, config, origin) {
     url.searchParams.set('episode', episode);
   }
   if (languages) url.searchParams.set('language', languages);
-  if (hi) url.searchParams.set('hi', 'true');
+  // No `hi` parameter: on Wyzie it is a hard filter (only SDH subtitles come
+  // back). The "prefer hearing-impaired" option sorts SDH first in mapSubs.
   // NOTE on extras: Stremio sends { videoHash, videoSize, filename } when it
   // knows them. We do NOT forward filename to /search — wyzie treats it as a
   // hard filter (subs that don't literally mention that filename are DROPPED),
@@ -831,31 +922,21 @@ async function fetchSubtitles(type, id, extras, config, origin) {
       headers: { 'User-Agent': 'wyzie-stremio/1.2' },
     });
 
-    if (res.status === 400) {
-      // Wyzie answers 400 "No subtitles found" rather than an empty list. That
-      // is a working key with no matches, not a service error. Any other 400
-      // (bad params) still falls through to the error notice below.
+    if (!res.ok) {
       const body = await res.json().catch(() => null);
-      if (/no subtitles found/i.test(String(body?.message ?? ''))) {
+      // Wyzie answers 400 "No subtitles found" rather than an empty list. That
+      // is a working key with no matches, not a service error.
+      if (res.status === 400 && /no subtitles found/i.test(String(body?.message ?? ''))) {
         return { subtitles: notice(origin, 'empty', 'Wyzie: no subtitles found for this title.'), cacheMaxAge: 600 };
       }
-    }
-
-    if (!res.ok) {
       // Tell the user what happened instead of showing an empty list.
-      const MESSAGES = {
-        401: 'Wyzie: API key missing or unauthorized. Check the addon settings.',
-        403: 'Wyzie: invalid API key. Re-check it in the addon settings.',
-        402: 'Wyzie: out of requests. Top up at store.wyzie.io',
-        429: 'Wyzie: daily limit reached. Resets at UTC midnight, or upgrade for more.',
-      };
-      const msg = MESSAGES[res.status] || ('Wyzie: service error ' + res.status + '. Try again later.');
-      return { subtitles: notice(origin, 's' + res.status, msg), cacheMaxAge: 60 };
+      const r = refusalNotice(res.status, body);
+      return { subtitles: notice(origin, r.key, r.text), cacheMaxAge: 60 };
     }
 
     const data = await res.json();
     const list = Array.isArray(data) ? data : (data.subtitles ?? []);
-    const subs = mapSubs(list, extras?.filename);
+    const subs = mapSubs(list, extras?.filename, !!hi);
     if (!subs.length) {
       // Key works, but nothing matched this title. Say so rather than looking broken.
       return { subtitles: notice(origin, 'empty', 'Wyzie: no subtitles found for this title.'), cacheMaxAge: 600 };
@@ -895,8 +976,10 @@ export default {
 
     // API-key validation proxy for the config page. Hits the billing API's
     // read-only /api/usage-limit endpoint (no quota cost, authoritative for
-    // key existence + tier) and returns just { valid, type }. Same-origin, so
-    // the page can call it without any CORS dance.
+    // key existence + tier) and returns just { valid, type, held }. Same-origin,
+    // so the page can call it without any CORS dance. `held` is true when the
+    // key is on hold (the billing API's `held` flag; absent on older API
+    // versions, which reads as not held).
     //
     // Why not sub.wyzie.io/sources: that endpoint is a scraping worker that
     // fans out to /api/usage-limit itself, and its `verification_unavailable`
@@ -918,7 +1001,7 @@ export default {
         if (!r.ok) return json({ valid: null, type: null });
         const d = await r.json().catch(() => ({}));
         const type = d.key_type === 'paid' ? 'paid' : 'free';
-        return json({ valid: true, type });
+        return json({ valid: true, type, held: d.held === true });
       } catch {
         return json({ valid: null, type: null });
       }
