@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="service.subtitles.wyzie"
        name="Wyzie Subs"
-       version="1.0.2"
+       version="1.0.3"
        provider-name="Wyzie">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -11,7 +11,10 @@
   <extension point="xbmc.addon.metadata">
     <summary lang="en_GB">Wyzie Subs: free subtitles in 80+ languages</summary>
     <description lang="en_GB">Subtitle service powered by Wyzie Subs (sub.wyzie.io). Subtitles from OpenSubtitles, IndexSubtitle and, on Pro keys, five more providers, through the Wyzie Subs API. Get a free API key at store.wyzie.io/redeem.</description>
-    <news>v1.0.2
+    <news>v1.0.3
+- Security: downloads only come from sub.wyzie.io over https, subtitle files are always saved as wyzie.srt/.vtt/.ass/.ssa/.sub in the add-on folder, and the API key is kept out of the Kodi log
+
+v1.0.2
 - Finds the right title for TMDB-scraped movies and shows (reads the IMDb and TMDB ids separately; episodes use the show's id)
 - Manual search by title (e.g. "The Martian 2015" or "Severance S01E02")
 - Searches every provider your key allows (free: OpenSubtitles and IndexSubtitle)

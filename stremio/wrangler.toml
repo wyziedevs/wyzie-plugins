@@ -10,5 +10,17 @@ compatibility_flags = ["nodejs_compat"]
 pattern = "stremio.wyzie.io"
 custom_domain = true
 
+# The user's API key rides in every request path (/<config>/...) and in the
+# /search subrequest URL, so per-request invocation logs and traces would store
+# it in Workers Logs. Both stay off; console output (the worker logs no keys)
+# is still collected, sampled at 10%.
 [observability]
 enabled = true
+head_sampling_rate = 0.1
+
+[observability.logs]
+enabled = true
+invocation_logs = false
+
+[observability.traces]
+enabled = false

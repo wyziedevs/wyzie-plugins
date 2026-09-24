@@ -177,7 +177,8 @@ builder.defineSubtitlesHandler(async ({ type, id, config }) => {
       staleError: 60 * 60 * 24,
     };
   } catch (err) {
-    console.error('[wyzie-stremio] fetch failed', err);
+    // Only the error's name/code: the request URL carries the user's key.
+    console.error('[wyzie-stremio] fetch failed', (err && err.cause && err.cause.code) || (err && err.name));
     return { subtitles: [] };
   }
 });

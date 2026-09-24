@@ -21,6 +21,12 @@ const WYZIE_API = 'https://api.wyzie.io';
 // without any network round-trip.
 const API_KEY_RE = /^wyzie-[a-z0-9]{32}$/i;
 
+// Language codes accepted in the config: ISO 639-1/-2 with an optional region
+// or script suffix ("en", "pt-br"). The cap stays above the ~125 languages the
+// configure page offers, so a long hand-picked list is never cut short.
+const LANG_CODE_RE = /^[a-z]{2,3}(?:-[a-z]{2,4})?$/;
+const MAX_LANGUAGES = 150;
+
 const MANIFEST = {
   id: 'io.wyzie.subs',
   version: '1.2.0',
@@ -98,15 +104,35 @@ function json(data, status = 200) {
 function html(body) {
   return new Response(body, {
     status: 200,
-    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'X-Content-Type-Options': 'nosniff' },
   });
+}
+
+// JSON for an inline <script>. JSON.stringify leaves `</script>` and `<!--`
+// intact, which would end the script block early; escaping <, > and & as
+// \u escapes keeps the value identical to JS while making it inert to the HTML
+// parser. U+2028/U+2029 are escaped for engines that treat them as newlines.
+function scriptJson(value) {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
 }
 
 // Standalone configure / install page. `prefill` pre-populates the form when a
 // user re-opens config from an already-installed addon. The inline script uses
 // string concatenation (no template literals) so it can be embedded safely.
+// `prefill` comes from the request URL: only the sanitized fields are embedded,
+// and only through scriptJson.
 function configPage(prefill) {
-  const PREFILL = JSON.stringify(prefill || {});
+  const cfg = sanitizeConfig(prefill);
+  const fields = {};
+  if (cfg.apiKey) fields.apiKey = cfg.apiKey;
+  if (cfg.languages) fields.languages = cfg.languages;
+  if (cfg.hi) fields.hi = true;
+  const PREFILL = scriptJson(fields);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -682,12 +708,45 @@ function parseConfig(seg) {
   // first path segment (stremio-addon-sdk getRouter.js does JSON.parse on the
   // Express-decoded param). Fall back to base64 for hand-crafted install URLs.
   try {
-    return JSON.parse(decodeURIComponent(seg));
+    return sanitizeConfig(JSON.parse(decodeURIComponent(seg)));
   } catch {}
   try {
-    return JSON.parse(atob(seg));
+    return sanitizeConfig(JSON.parse(atob(seg)));
   } catch {}
   return {};
+}
+
+// The config segment is attacker-controlled (anyone can craft a link), so keep
+// only the three known fields, each in its expected shape:
+//   apiKey     a `wyzie-` + 32 key; anything else is dropped and flagged
+//              badKey so the subtitle list can say so
+//   languages  comma-separated (or an array of) short language codes, returned
+//              as the comma-separated string the configure page and /search use
+//   hi         a boolean (true, or the "true"/"on" a form checkbox gives)
+function sanitizeConfig(raw) {
+  const cfg = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const out = {};
+
+  const apiKey = typeof cfg.apiKey === 'string' ? cfg.apiKey.trim() : '';
+  if (API_KEY_RE.test(apiKey)) out.apiKey = apiKey;
+  else if (apiKey) out.badKey = true;
+
+  const rawLangs = Array.isArray(cfg.languages)
+    ? cfg.languages
+    : typeof cfg.languages === 'string'
+      ? cfg.languages.split(',')
+      : [];
+  const langs = [];
+  for (const l of rawLangs) {
+    if (typeof l !== 'string') continue;
+    const code = l.trim().toLowerCase();
+    if (LANG_CODE_RE.test(code) && !langs.includes(code)) langs.push(code);
+    if (langs.length >= MAX_LANGUAGES) break;
+  }
+  if (langs.length) out.languages = langs.join(',');
+
+  if (cfg.hi === true || cfg.hi === 'true' || cfg.hi === 'on') out.hi = true;
+  return out;
 }
 
 function parseStremioId(id) {
@@ -881,7 +940,10 @@ function refusalNotice(status, body) {
 }
 
 async function fetchSubtitles(type, id, extras, config, origin) {
-  const { apiKey, languages, hi } = config;
+  const { apiKey, languages, hi, badKey } = config;
+  if (badKey) {
+    return { subtitles: notice(origin, 's403', 'Wyzie: invalid API key. Re-check it in the addon settings.'), cacheMaxAge: 60 };
+  }
   if (!apiKey) {
     return { subtitles: notice(origin, 'nokey', 'Wyzie: no API key set. Open the addon settings to add one.'), cacheMaxAge: 60 };
   }

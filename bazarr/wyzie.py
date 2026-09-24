@@ -14,7 +14,9 @@ from __future__ import annotations
 import datetime
 import logging
 import os
+import re
 from typing import List, Optional, Set
+from urllib.parse import urlencode
 
 from babelfish import Language
 from guessit import guessit
@@ -69,6 +71,11 @@ def _body(r) -> dict:
 
 def _message(r) -> str:
     return str(_body(r).get("message") or "")
+
+
+def _redact(url: str) -> str:
+    """A URL fit for the log: the API key and download token masked."""
+    return re.sub(r"(?i)([?&](?:key|api_key|tok)=)[^&#]*", r"\1***", str(url or ""))
 
 
 def _no_results(r) -> bool:
@@ -309,7 +316,10 @@ class WyzieProvider(Provider):
         try:
             r = self.session.get(f"{WYZIE_BASE}/search", params=params, timeout=15)
         except Exception as e:
-            logger.error("Wyzie request failed: %s", e)
+            # Only the exception class: its text carries the request URL, API
+            # key included.
+            logger.error("Wyzie request failed: %s (%s)", type(e).__name__,
+                         _redact(f"{WYZIE_BASE}/search?{urlencode(params)}"))
             return []
 
         if r.status_code == 400:

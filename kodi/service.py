@@ -26,7 +26,10 @@ ADDON = xbmcaddon.Addon()
 ADDON_ID = ADDON.getAddonInfo("id")
 PROFILE = xbmcvfs.translatePath(ADDON.getAddonInfo("profile"))
 WYZIE_BASE = "https://sub.wyzie.io"
-USER_AGENT = "wyzie-kodi/1.0.2"
+WYZIE_HOST = urllib.parse.urlsplit(WYZIE_BASE).hostname
+USER_AGENT = "wyzie-kodi/1.0.3"
+# Subtitle formats a download may be saved as; anything else is saved as .srt.
+SUB_FORMATS = ("srt", "vtt", "ass", "ssa", "sub")
 
 HANDLE = int(sys.argv[1])
 PARAMS = dict(urllib.parse.parse_qsl(sys.argv[2].lstrip("?")))
@@ -70,6 +73,29 @@ def _bare_url(url, fallback):
     """Show a link without its scheme, which reads better in a notification."""
     url = str(url or fallback)
     return re.sub(r"^https?://", "", url)
+
+
+def _redact(url):
+    """A URL fit for the log: the API key and download token masked."""
+    return re.sub(r"(?i)([?&](?:key|api_key|tok)=)[^&#]*", r"\1***", str(url or ""))
+
+
+def _sub_format(value):
+    """The subtitle format as a safe file extension: one of SUB_FORMATS, else srt."""
+    fmt = str(value or "").strip().lower()
+    return fmt if fmt in SUB_FORMATS else "srt"
+
+
+def _wyzie_url(url):
+    """True for an https link on the Wyzie host, the only place downloads come from."""
+    url = str(url or "")
+    try:
+        parts = urllib.parse.urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return False
+    return (parts.scheme == "https" and parts.hostname == WYZIE_HOST and port in (None, 443)
+            and "@" not in parts.netloc and "\\" not in url)
 
 
 def refusal_message(r):
@@ -349,7 +375,9 @@ def search(manual=False):
         r = requests.get(f"{WYZIE_BASE}/search", params=params, timeout=15,
                          headers={"User-Agent": USER_AGENT})
     except requests.RequestException as e:
-        log(f"request failed: {e}", xbmc.LOGERROR)
+        # The exception text carries the request URL, API key included.
+        log(f"request failed: {type(e).__name__} "
+            f"({_redact(WYZIE_BASE + '/search?' + urllib.parse.urlencode(params))})", xbmc.LOGERROR)
         notify("Network error contacting Wyzie")
         xbmcplugin.endOfDirectory(HANDLE)
         return
@@ -369,7 +397,8 @@ def search(manual=False):
     data = r.json()
     if isinstance(data, dict):
         data = data.get("subtitles", [])
-    data = [item for item in data if isinstance(item, dict) and item.get("url")]
+    # Only links back to Wyzie can be downloaded (see download()), so don't list others.
+    data = [item for item in data if isinstance(item, dict) and _wyzie_url(item.get("url"))]
     if setting("prefer_hi") == "true":
         # Stable sort: hearing-impaired first, API order otherwise kept.
         data.sort(key=lambda item: not item.get("isHearingImpaired"))
@@ -386,11 +415,9 @@ def search(manual=False):
         list_item.setProperty("hearing_imp",
                               "true" if item.get("isHearingImpaired") else "false")
 
-        url = "plugin://%s/?action=download&url=%s&format=%s" % (
-            ADDON_ID,
-            urllib.parse.quote(item["url"], safe=""),
-            item.get("format", "srt"),
-        )
+        url = "plugin://%s/?%s" % (ADDON_ID, urllib.parse.urlencode(
+            {"action": "download", "url": item["url"], "format": _sub_format(item.get("format"))},
+            quote_via=urllib.parse.quote))
         xbmcplugin.addDirectoryItem(handle=HANDLE, url=url,
                                     listitem=list_item, isFolder=False)
 
@@ -399,8 +426,14 @@ def search(manual=False):
 
 def download():
     url = PARAMS.get("url")
-    fmt = PARAMS.get("format", "srt")
+    fmt = _sub_format(PARAMS.get("format"))
     if not url:
+        return
+    if not _wyzie_url(url):
+        # Any add-on or skin can build a plugin:// link, so only fetch links
+        # that point back at Wyzie.
+        log(f"refusing to download from {_redact(url)[:200]}", xbmc.LOGWARNING)
+        notify("Download failed")
         return
     if not xbmcvfs.exists(PROFILE):
         xbmcvfs.mkdirs(PROFILE)
@@ -411,7 +444,7 @@ def download():
         # with the same statuses as /search when the key can't pay.
         r = requests.get(url, timeout=30, headers={"User-Agent": USER_AGENT})
     except requests.RequestException as e:
-        log(f"download failed: {e}", xbmc.LOGERROR)
+        log(f"download failed: {type(e).__name__} ({_redact(url)})", xbmc.LOGERROR)
         notify("Download failed")
         return
     if not r.ok:
