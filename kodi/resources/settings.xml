@@ -3,5 +3,13 @@
   <category label="General">
     <setting id="api_key" type="text" label="Wyzie API key (free at store.wyzie.io/redeem)" default=""/>
     <setting id="prefer_hi" type="bool" label="Prefer hearing-impaired subtitles (list them first)" default="false"/>
+    <setting id="clean_format" type="bool" label="Clean formatting (strip styling tags, fix overlapping lines)" default="false"/>
+  </category>
+  <category label="Pro features">
+    <setting type="lsep" label="These need a Pro key (store.wyzie.io/#plans). With a free key they are skipped."/>
+    <setting id="dual_lang" type="labelenum" label="Dual subtitles: second language under each line" default="Off" values="Off|English|Spanish|French|German|Italian|Portuguese|Russian|Japanese|Korean|Chinese|Arabic|Hindi|Turkish|Polish|Dutch|Swedish|Danish|Finnish|Norwegian|Czech|Greek|Hebrew|Hungarian|Indonesian|Thai|Vietnamese|Ukrainian|Romanian|Bulgarian|Croatian|Serbian|Slovak|Malay|Persian"/>
+    <setting id="ai_translate" type="bool" label="Offer AI-translated subtitles (one per language)" default="false"/>
+    <setting id="strip_sdh" type="bool" label="Remove hearing-impaired text like [door creaks]" default="false"/>
+    <setting id="mask_profanity" type="bool" label="Mask strong profanity (English)" default="false"/>
   </category>
 </settings>

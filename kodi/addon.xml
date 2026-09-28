@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="service.subtitles.wyzie"
        name="Wyzie Subs"
-       version="1.0.3"
+       version="1.1.1"
        provider-name="Wyzie">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -10,8 +10,20 @@
   <extension point="xbmc.subtitle.module" library="service.py"/>
   <extension point="xbmc.addon.metadata">
     <summary lang="en_GB">Wyzie Subs: free subtitles in 80+ languages</summary>
-    <description lang="en_GB">Subtitle service powered by Wyzie Subs (sub.wyzie.io). Subtitles from OpenSubtitles, IndexSubtitle and, on Pro keys, five more providers, through the Wyzie Subs API. Get a free API key at store.wyzie.io/redeem.</description>
-    <news>v1.0.3
+    <description lang="en_GB">Subtitle service powered by Wyzie Subs (sub.wyzie.io). Subtitles from OpenSubtitles and, on Pro keys, more providers (including anime), with optional formatting cleanup. Pro keys also get dual-language subtitles, AI translation, hearing-impaired text removal and profanity masking (Settings &gt; Pro features). Get a free API key at store.wyzie.io/redeem.</description>
+    <news>v1.1.1
+- Every subtitle language Kodi lists is searched (it used to know only 34), including Portuguese (Brazil); Kodi 22's "original"/"default" entries are skipped
+- AI translation offers the exact language (English, not English (Australia))
+- Dual copies only for subtitles in your languages
+- A busy AI translation shows a message instead of failing silently
+
+v1.1.0
+- Dual subtitles (Pro): pick a second language and your best subtitles get a "+ Language" copy showing both at once
+- Remove hearing-impaired text and mask profanity (Pro), clean formatting (all keys)
+- AI translation (Pro, opt-in), one per language
+- With a free key the Pro options are skipped and you still get the subtitle
+
+v1.0.3
 - Security: downloads only come from sub.wyzie.io over https, subtitle files are always saved as wyzie.srt/.vtt/.ass/.ssa/.sub in the add-on folder, and the API key is kept out of the Kodi log
 
 v1.0.2

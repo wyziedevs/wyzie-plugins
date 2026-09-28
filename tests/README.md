@@ -42,7 +42,20 @@ all three plugins depend on is healthy.
 node tests/stremio.e2e.cjs
 ```
 Boots the actual addon over HTTP and queries `/manifest.json` and the
-`/<config>/subtitles/...` endpoints exactly as the Stremio app does.
+`/<config>/subtitles/...` endpoints exactly as the Stremio app does. This is
+the self-host SDK variant (`stremio/addon.js`); a few checks answer `/search`
+from canned rows to hold it to the same behaviour as the Worker.
+
+### The hosted Worker (`stremio/worker.js`, stremio.wyzie.io)
+
+```bash
+node tests/worker.test.mjs
+```
+Imports the production Worker's default export (`{ fetch }`) in Node (22.15+)
+and calls it with `Request` objects: manifest, configure page, `/notice.srt`,
+and subtitles. The offline part answers `/search` from canned rows (language
+normalization, exact AI rows, dual copies, extras parsing, notices); with
+`WYZIE_KEY` set, a few live requests follow (a Pro key for the AI check).
 
 ### See it in a real client (browser only, no desktop install)
 

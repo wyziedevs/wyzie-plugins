@@ -13,6 +13,8 @@
  * first path segment, so no secrets ever live in env vars or code.
  */
 
+import LOGO_PNG from './logo.png';
+
 const WYZIE_BASE = 'https://sub.wyzie.io';
 const WYZIE_API = 'https://api.wyzie.io';
 
@@ -21,19 +23,21 @@ const WYZIE_API = 'https://api.wyzie.io';
 // without any network round-trip.
 const API_KEY_RE = /^wyzie-[a-z0-9]{32}$/i;
 
-// Language codes accepted in the config: ISO 639-1/-2 with an optional region
-// or script suffix ("en", "pt-br"). The cap stays above the ~125 languages the
-// configure page offers, so a long hand-picked list is never cut short.
-const LANG_CODE_RE = /^[a-z]{2,3}(?:-[a-z]{2,4})?$/;
+// Language codes accepted in the config: ISO 639-1/-2 with optional region or
+// script subtags ("en", "pt-br", "es-419", "zh-hant-tw"). Each is normalized to
+// what Wyzie's `language` param takes (apiLang) or dropped. The cap stays above
+// the ~125 languages the configure page offers, so a long hand-picked list is
+// never cut short.
+const LANG_CODE_RE = /^[a-z]{2,3}(?:-[a-z0-9]{2,8}){0,2}$/;
 const MAX_LANGUAGES = 150;
 
 const MANIFEST = {
   id: 'io.wyzie.subs',
-  version: '1.2.0',
+  version: '1.4.1',
   name: 'Wyzie Subs',
   description:
-    'Subtitles from OpenSubtitles, IndexSubtitle and, on Pro keys, five more providers, through the Wyzie Subs API. Get a free key at store.wyzie.io/#plans.',
-  logo: 'https://i.postimg.cc/L5ppKYC5/cclogo.png',
+    'Subtitles from OpenSubtitles, matched to your release, with cleanup options. Pro keys add more providers (including anime), dual-language subtitles, AI translation, SDH removal and profanity masking. Get a free key at store.wyzie.io/#plans.',
+  logo: 'https://stremio.wyzie.io/logo.png',
   resources: ['subtitles'],
   types: ['movie', 'series'],
   catalogs: [],
@@ -56,6 +60,36 @@ const MANIFEST = {
       key: 'hi',
       type: 'checkbox',
       title: 'Prefer hearing-impaired subtitles (listed first, others still shown)',
+      required: false,
+    },
+    {
+      key: 'plain',
+      type: 'checkbox',
+      title: 'Clean formatting (strip styling tags, fix overlapping lines)',
+      required: false,
+    },
+    {
+      key: 'ai',
+      type: 'checkbox',
+      title: 'AI-translate into my selected languages (Pro key only; adds one AI option per language)',
+      required: false,
+    },
+    {
+      key: 'dual',
+      type: 'text',
+      title: 'Dual subtitles: second language to show under each line, ISO 639-1 (Pro key only), e.g. es',
+      required: false,
+    },
+    {
+      key: 'sdh',
+      type: 'checkbox',
+      title: 'Remove hearing-impaired text like [door creaks] (Pro key only)',
+      required: false,
+    },
+    {
+      key: 'clean',
+      type: 'checkbox',
+      title: 'Mask strong profanity, English (Pro key only)',
       required: false,
     },
   ],
@@ -83,10 +117,108 @@ const ISO639_2B = Object.fromEntries(
     .map((pair) => pair.split(':')),
 );
 
+// Regional languages Stremio's list (Stremio/nodejs-langs) names on their own:
+// pob Portuguese (Brazil), zht Chinese (Traditional), spl Spanish (Latin
+// America). Looked up before the base language, so a pt-BR row is not just
+// "por". Keys are OpenSubtitles' codes (pb, zt, ea, sp, ze, zc) and the AI rows'.
+const STREMIO_REGIONAL = {
+  pb: 'pob', 'pt-br': 'pob',
+  zt: 'zht', 'zh-tw': 'zht', 'zh-hant': 'zht', 'zh-hk': 'zht', 'zh-mo': 'zht',
+  ea: 'spl', 'es-419': 'spl', sp: 'spa', 'es-es': 'spa',
+  ze: 'chi', zc: 'chi',
+};
+
 function stremioLang(code) {
   const raw = String(code || '').trim();
-  const c = raw.toLowerCase();
-  return ISO639_2B[c] || ISO639_2B[c.split(/[-_]/)[0]] || raw || 'eng';
+  const c = raw.toLowerCase().replace(/_/g, '-');
+  if (STREMIO_REGIONAL[c]) return STREMIO_REGIONAL[c];
+  const [base, region] = c.split('-');
+  // Every other Spanish region (es-MX, es-AR, es-US, ...) is Latin American.
+  if (base === 'es' && region) return 'spl';
+  return ISO639_2B[c] || ISO639_2B[base] || raw || 'eng';
+}
+
+// Three-letter codes (ISO 639-2/B and /T, and Stremio's regional ones) back to
+// the two-letter code Wyzie takes, so a hand-typed "eng" or "pob" still works.
+const FROM_ISO639_2 = Object.fromEntries([
+  ...Object.entries(ISO639_2B).map(([two, three]) => [three, two]),
+  ...'fra:fr deu:de zho:zh nld:nl ces:cs ron:ro fas:fa msa:ms ell:el isl:is mkd:mk slk:sk cym:cy mya:my kat:ka bod:bo mri:mi sqi:sq hye:hy eus:eu fil:tl pob:pb zht:zt zhe:zh spl:es'
+    .split(' ')
+    .map((pair) => pair.split(':')),
+]);
+
+// A configured language code as Wyzie's `language` param takes it: two letters
+// only (anything else is a 400 "Invalid language format", which sinks the whole
+// list). pt-BR and zh-TW become OpenSubtitles' own pb / zt; any other region or
+// script is dropped (es-419 and es-MX -> es, which also brings Latin American
+// Spanish); three-letter codes map back to two. null when there is no match.
+function apiLang(code) {
+  const c = String(code || '').trim().toLowerCase().replace(/_/g, '-');
+  if (/^[a-z]{2}$/.test(c)) return c;
+  if (/^[a-z]{3}$/.test(c)) return FROM_ISO639_2[c] || null;
+  const m = c.match(/^([a-z]{2})((?:-[a-z0-9]{2,8})+)$/);
+  if (!m) return null;
+  const tags = m[2].slice(1).split('-');
+  if (m[1] === 'pt' && tags.includes('br')) return 'pb';
+  if (m[1] === 'zh' && tags.some((t) => t === 'hant' || t === 'tw' || t === 'hk' || t === 'mo')) return 'zt';
+  return m[1];
+}
+
+// A configured code as kept in the config: the API code, except that a region
+// the API has no code for stays (es-mx), so the AI row can still honour it.
+function configLang(code) {
+  const c = String(code || '').trim().toLowerCase().replace(/_/g, '-');
+  if (!LANG_CODE_RE.test(c)) return null;
+  const api = apiLang(c);
+  if (!api) return null;
+  return c.includes('-') && api === c.split('-')[0] ? c : api;
+}
+
+// OpenSubtitles' regional codes and the language each belongs to.
+const OS_REGIONAL_BASE = { pb: 'pt', zt: 'zh', ze: 'zh', zc: 'zh', ea: 'es', sp: 'es', iw: 'he' };
+
+// The language a code belongs to: "pt" for pt, pb and pt-BR.
+function langFamily(code) {
+  const c = baseLang(code);
+  return OS_REGIONAL_BASE[c] || c;
+}
+
+// The AI rows (by language code) that stand for a configured code, best first.
+const AI_TARGETS = {
+  pb: ['pt-br'],
+  zt: ['zh-tw', 'zh-hant', 'zh-hk'],
+  ea: ['es-419', 'es-mx'],
+  sp: ['es-es', 'es'],
+  ze: ['zh-hans', 'zh-cn', 'zh'],
+  zc: ['zh-hk', 'zh-hant'],
+};
+
+function aiTargets(code) {
+  const c = String(code || '').trim().toLowerCase();
+  return AI_TARGETS[c] || (c.includes('-') ? [c, baseLang(c)] : [c]);
+}
+
+// The AI rows to offer: one per configured language, the row whose code IS that
+// language (en -> "en", pb -> "pt-BR", es-mx -> "es-MX"), and a regional variant
+// only when there is no such row. The API lists variants before the plain
+// language (en-AU ... en-US, then en), so keeping the first row per language
+// offered "English (Australia)" for en and "Spanish (Argentina)" for es.
+function pickAiRows(rows, langs) {
+  const byCode = new Map();
+  for (const r of rows) {
+    const c = String(r.language || '').trim().toLowerCase();
+    if (c && !byCode.has(c)) byCode.set(c, r);
+  }
+  const picked = new Set();
+  for (const code of langs) {
+    let row = aiTargets(code).map((c) => byCode.get(c)).find((r) => r && !picked.has(r));
+    if (!row) {
+      const family = langFamily(code);
+      row = rows.find((r) => langFamily(r.language) === family && !picked.has(r));
+    }
+    if (row) picked.add(row);
+  }
+  return picked;
 }
 
 const CORS = {
@@ -131,7 +263,8 @@ function configPage(prefill) {
   const fields = {};
   if (cfg.apiKey) fields.apiKey = cfg.apiKey;
   if (cfg.languages) fields.languages = cfg.languages;
-  if (cfg.hi) fields.hi = true;
+  for (const k of ['hi', 'ai', 'sdh', 'clean', 'plain']) if (cfg[k]) fields[k] = true;
+  if (cfg.dual) fields.dual = cfg.dual;
   const PREFILL = scriptJson(fields);
   return `<!doctype html>
 <html lang="en">
@@ -141,7 +274,7 @@ function configPage(prefill) {
 <meta name="theme-color" content="#0b0b0b" />
 <title>Wyzie Subs for Stremio</title>
 <meta name="description" content="Install Wyzie Subs in Stremio. Free subtitles in 125 languages." />
-<link rel="icon" href="https://i.postimg.cc/L5ppKYC5/cclogo.png" />
+<link rel="icon" href="/logo.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preconnect" href="https://flagcdn.com" crossorigin />
@@ -295,7 +428,38 @@ function configPage(prefill) {
 
   .check { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
   .check input { width: 16px; height: 16px; accent-color: var(--primary-600); cursor: pointer; }
-  .check span { font-size: 14px; color: var(--type-dimmed); }
+  .check input:disabled { cursor: not-allowed; }
+  .check span { font-size: 14px; color: var(--type-dimmed); display: inline-flex; align-items: center; gap: 8px; }
+  .check input:disabled + span { opacity: .55; }
+  select {
+    display: block; width: 100%; height: 40px; padding: 0 36px 0 12px; font-size: 14px;
+    font-family: inherit; color: var(--type-emphasized); background-color: #0c0c0c;
+    border: 1px solid var(--border-300); border-radius: 8px; outline: none; cursor: pointer;
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+    transition: border-color .2s var(--ease-out-quint), box-shadow .2s var(--ease-out-quint);
+  }
+  select:focus { border-color: var(--primary-500); box-shadow: 0 0 0 3px var(--primary-ring); }
+  select:disabled { opacity: .55; cursor: not-allowed; }
+  select option { background: var(--card); color: var(--type-emphasized); }
+
+  /* Pro features: one tinted panel instead of a badge on every row. */
+  .pro {
+    margin: 4px 0 22px; padding: 16px 16px 2px;
+    border: 1px solid var(--border-200); border-radius: 10px; background: #0e0e0e;
+    transition: border-color .25s var(--ease-out-quint), background-color .25s var(--ease-out-quint);
+  }
+  .pro.unlocked { border-color: var(--primary-ring); background: rgba(37,99,235,0.05); }
+  .pro-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; margin-bottom: 14px; }
+  .pro-head h3 { white-space: nowrap; }
+  .pro-head h3 { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--primary-400); }
+  .pro-state { font-size: 12px; color: var(--type-footer); }
+  .pro-state a { color: var(--primary-500); text-decoration: none; }
+  .pro-state a:hover { text-decoration: underline; }
+  .pro.unlocked .pro-state { color: var(--success-500); }
+  .pro .field.last { margin-bottom: 14px; }
+  .btn.sync { width: auto; padding: 9px 16px; font-size: 13px; text-decoration: none; }
 
   /* Button (store: rounded-lg, py-2.5 px-6, font-semibold text-sm, ease-out-quint, active:scale-[0.98]).
      Hover/active effects are gated behind :not([disabled]) so a disabled button stays fully inert. */
@@ -328,14 +492,14 @@ function configPage(prefill) {
   <canvas id="bg"></canvas>
   <main class="card">
     <div class="brand">
-      <img src="https://i.postimg.cc/L5ppKYC5/cclogo.png" alt="Wyzie logo" />
+      <img src="/logo.png" alt="Wyzie logo" width="36" height="36" />
       <div>
         <h1><span>Wyzie</span> Subs</h1>
         <div class="tag">for Stremio</div>
       </div>
     </div>
     <h2 class="title">Add Wyzie Subs to Stremio</h2>
-    <p class="lead">Subtitles from OpenSubtitles, IndexSubtitle and, on Pro keys, five more providers, through the Wyzie Subs API. Set your options below, then install.</p>
+    <p class="lead">Subtitles matched to the file you're playing. Pro keys add more providers (including anime), dual-language subtitles and AI translation. Set your options, then install.</p>
 
     <div class="field">
       <label for="apiKey">Wyzie API key</label>
@@ -377,6 +541,48 @@ function configPage(prefill) {
       <div class="hint">SDH subtitles are listed first; the others are still shown.</div>
     </div>
 
+    <div class="field">
+      <label class="check"><input id="plain" type="checkbox" /><span>Clean formatting</span></label>
+      <div class="hint">Strips leftover styling tags and fixes lines that overlap or repeat.</div>
+    </div>
+
+    <section class="pro" aria-labelledby="proTitle">
+      <div class="pro-head">
+        <h3 id="proTitle">Pro features</h3>
+        <span class="pro-state" id="proState">Needs a Pro key</span>
+      </div>
+
+      <div class="field">
+        <label for="dual">Dual subtitles</label>
+        <select id="dual" disabled><option value="">Off</option></select>
+        <div class="hint">Shows a second language under each line. Your best subtitles get a “+ Language” copy; the originals stay listed.</div>
+      </div>
+
+      <div class="field">
+        <label class="check"><input id="ai" type="checkbox" disabled /><span>AI-translate into my languages</span></label>
+        <div class="hint">One AI-translated option per selected language, for titles with no native subtitle. Needs at least one language chosen above.</div>
+      </div>
+
+      <div class="field">
+        <label class="check"><input id="sdh" type="checkbox" disabled /><span>Remove hearing-impaired text</span></label>
+        <div class="hint">Drops cues like [door creaks] and speaker labels from every subtitle.</div>
+      </div>
+
+      <div class="field">
+        <label class="check"><input id="clean" type="checkbox" disabled /><span>Mask strong profanity</span></label>
+        <div class="hint">English subtitles only.</div>
+      </div>
+
+      <div class="field last">
+        <label>Sync subtitles</label>
+        <a class="btn ghost sync" href="https://sub.wyzie.io/synced" target="_blank" rel="noopener">
+          <svg class="svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></svg>
+          Open Wyzie Synced
+        </a>
+        <div class="hint">Out of sync? Wyzie Synced listens to your video in your browser and times the subtitle to the speech; drag the file it gives you onto Stremio's player. Stremio doesn't share audio with addons, so this can't run inside it.</div>
+      </div>
+    </section>
+
     <button id="install" class="btn primary">
       <svg class="svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
       Install in Stremio
@@ -400,13 +606,18 @@ function configPage(prefill) {
 <script>
   var PREFILL = ${PREFILL};
   function $(id){ return document.getElementById(id); }
-  var key = $('apiKey'), hi = $('hi');
+  var key = $('apiKey'), hi = $('hi'), plain = $('plain');
+  var ai = $('ai'), sdh = $('sdh'), clean = $('clean'), dual = $('dual');
+  var proEl = document.querySelector('.pro'), proState = $('proState');
   var installBtn = $('install'), webBtn = $('web'), copyBtn = $('copy'), note = $('note');
+  var keyType = null; // "paid" | "free" | null, from /validate
 
-  // [ISO 639-1 code, English name, flagcdn country code]
+  // [ISO 639-1 code, English name, flagcdn country code]. pb is OpenSubtitles'
+  // code for Brazilian Portuguese (pt also includes it).
   var LANGS = [
     ['en','English','us'], ['es','Spanish','es'], ['fr','French','fr'], ['de','German','de'],
-    ['it','Italian','it'], ['pt','Portuguese','pt'], ['ru','Russian','ru'], ['ja','Japanese','jp'],
+    ['it','Italian','it'], ['pt','Portuguese','pt'], ['pb','Portuguese (Brazil)','br'],
+    ['ru','Russian','ru'], ['ja','Japanese','jp'],
     ['ko','Korean','kr'], ['zh','Chinese','cn'], ['ar','Arabic','sa'], ['hi','Hindi','in'],
     ['nl','Dutch','nl'], ['pl','Polish','pl'], ['tr','Turkish','tr'], ['sv','Swedish','se'],
     ['da','Danish','dk'], ['fi','Finnish','fi'], ['no','Norwegian','no'], ['cs','Czech','cz'],
@@ -441,23 +652,57 @@ function configPage(prefill) {
   ];
   var langByCode = {};
   for (var li = 0; li < LANGS.length; li++) langByCode[LANGS[li][0]] = LANGS[li];
+  (function(){
+    var h = '<option value="">Off</option>';
+    for (var i = 0; i < LANGS.length; i++) h += '<option value="' + LANGS[i][0] + '">' + LANGS[i][1] + '</option>';
+    document.getElementById('dual').innerHTML = h;
+  })();
 
   var msEl = $('ms'), msControl = $('msControl'), msPanel = $('msPanel');
   var msChips = $('msChips'), msList = $('msList'), msRows = $('msRows'), msSearch = $('msSearch');
 
   var selected = [];
   if (PREFILL.languages) {
-    selected = String(PREFILL.languages)
-      .split(',')
-      .map(function(s){ return s.trim().toLowerCase(); })
-      .filter(function(s){ return s && langByCode[s]; });
+    // A regional code the list doesn't offer (es-mx) shows as its language.
+    String(PREFILL.languages).split(',').forEach(function(s){
+      s = s.trim().toLowerCase();
+      if (!langByCode[s]) s = s.split('-')[0];
+      if (s && langByCode[s] && selected.indexOf(s) === -1) selected.push(s);
+    });
   } else {
-    // First-time setup: default to the visitor's browser/locale language.
-    var navLang = (navigator.language || navigator.userLanguage || '').slice(0, 2).toLowerCase();
+    // First-time setup: default to the visitor's browser/locale language
+    // (Brazilian Portuguese is its own entry).
+    var navFull = (navigator.language || navigator.userLanguage || '').toLowerCase();
+    var navLang = navFull.indexOf('pt-br') === 0 ? 'pb' : navFull.slice(0, 2);
     if (navLang && langByCode[navLang]) selected = [navLang];
   }
   if (PREFILL.hi) hi.checked = true;
+  if (PREFILL.plain) plain.checked = true;
   if (PREFILL.apiKey) key.value = PREFILL.apiKey;
+
+  // Pro options only work on a Pro key (a free key's download is refused), so
+  // they stay disabled until /validate confirms one. What the user asked for
+  // is remembered separately, so it comes back if the key turns out to be Pro.
+  var PRO_CHECKS = [ai, sdh, clean];
+  var wanted = { ai: !!PREFILL.ai, sdh: !!PREFILL.sdh, clean: !!PREFILL.clean, dual: PREFILL.dual || '' };
+  function updatePro(){
+    var paid = keyType === 'paid';
+    for (var i = 0; i < PRO_CHECKS.length; i++) {
+      var c = PRO_CHECKS[i];
+      c.disabled = !paid;
+      c.checked = paid && wanted[c.id];
+    }
+    dual.disabled = !paid;
+    dual.value = paid ? wanted.dual : '';
+    proEl.classList.toggle('unlocked', paid);
+    if (paid) proState.textContent = 'Unlocked';
+    else if (keyType === 'free') proState.innerHTML = 'Free key. <a href="https://store.wyzie.io/#plans" target="_blank" rel="noopener">Upgrade to Pro</a>';
+    else proState.textContent = 'Needs a Pro key';
+  }
+  for (var pi = 0; pi < PRO_CHECKS.length; pi++) {
+    PRO_CHECKS[pi].addEventListener('change', function(e){ if (!e.target.disabled) wanted[e.target.id] = e.target.checked; });
+  }
+  dual.addEventListener('change', function(){ if (!dual.disabled) wanted.dual = dual.value; });
 
   function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function flag(cc){
@@ -546,6 +791,13 @@ function configPage(prefill) {
     // Selecting everything is the same as no filter, so keep the URL short.
     if (selected.length && selected.length < LANGS.length) cfg.languages = selected.join(',');
     if (hi.checked) cfg.hi = true;
+    if (plain.checked) cfg.plain = true;
+    if (keyType === 'paid') {
+      if (ai.checked) cfg.ai = true;
+      if (sdh.checked) cfg.sdh = true;
+      if (clean.checked) cfg.clean = true;
+      if (dual.value) cfg.dual = dual.value;
+    }
     var seg = encodeURIComponent(JSON.stringify(cfg));
     var path = '/' + seg + '/manifest.json';
     var httpsUrl = 'https://' + location.host + path;
@@ -588,18 +840,21 @@ function configPage(prefill) {
       .then(function(r){ return r.json(); })
       .then(function(d){
         if (key.value.trim() !== v) return; // a newer keystroke superseded this
+        // Remember the tier so the Pro-only options can enable themselves.
+        keyType = (d && d.valid === true) ? (d.type === 'paid' ? 'paid' : 'free') : null;
         // "held" is optional: an older /validate (or billing API) omits it.
         if (d && d.valid === true && d.held === true) setKeyStatus('held', 'Key on hold: verify your site at store.wyzie.io/verify (or contact support)', 'warn');
         else if (d && d.valid === true) setKeyStatus('valid', 'Valid ' + (d.type === 'paid' ? 'Pro' : 'free') + ' key', 'valid');
         else if (d && d.valid === false) setKeyStatus('invalid', 'Invalid API key', 'invalid');
         else setKeyStatus('warn', 'Could not verify key, check your connection', 'warn');
+        updatePro();
       })
-      .catch(function(){ if (key.value.trim() === v) setKeyStatus('warn', 'Could not verify key, check your connection', 'warn'); });
+      .catch(function(){ if (key.value.trim() === v) { keyType = null; setKeyStatus('warn', 'Could not verify key, check your connection', 'warn'); updatePro(); } });
   }
   function queueCheck(){
     var v = key.value.trim();
     clearTimeout(debounceT);
-    if (!v) { setKeyStatus('idle'); return; }
+    if (!v) { keyType = null; setKeyStatus('idle'); updatePro(); return; }
     setKeyStatus('checking', 'Verifying key', 'loader');
     debounceT = setTimeout(function(){ checkKey(v); }, 450);
   }
@@ -615,6 +870,7 @@ function configPage(prefill) {
 
   key.addEventListener('input', queueCheck);
   refresh();
+  updatePro();
   if (key.value.trim()) { setKeyStatus('checking', 'Verifying key', 'loader'); checkKey(key.value.trim()); }
 
   installBtn.addEventListener('click', function(){ if (valid()) window.location.href = buildUrls().deep; });
@@ -717,12 +973,19 @@ function parseConfig(seg) {
 }
 
 // The config segment is attacker-controlled (anyone can craft a link), so keep
-// only the three known fields, each in its expected shape:
+// only the known fields, each in its expected shape:
 //   apiKey     a `wyzie-` + 32 key; anything else is dropped and flagged
 //              badKey so the subtitle list can say so
-//   languages  comma-separated (or an array of) short language codes, returned
-//              as the comma-separated string the configure page and /search use
+//   languages  comma-separated (or an array of) language codes, normalized by
+//              configLang (pt-br -> pb, eng -> en; unknown ones dropped) and
+//              returned as the comma-separated string the configure page uses
 //   hi         a boolean (true, or the "true"/"on" a form checkbox gives)
+//   ai         a boolean: offer AI-translated subtitles (Pro keys only)
+//   dual       a two-letter code: also offer each subtitle with this second
+//              language merged in (Pro keys only; /c/ dual=)
+//   sdh        a boolean: strip hearing-impaired text (Pro keys only; sdh=strip)
+//   clean      a boolean: mask strong profanity (Pro keys only; clean=1)
+//   plain      a boolean: strip styling, fix overlapping lines (plain=1)
 function sanitizeConfig(raw) {
   const cfg = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
   const out = {};
@@ -739,13 +1002,20 @@ function sanitizeConfig(raw) {
   const langs = [];
   for (const l of rawLangs) {
     if (typeof l !== 'string') continue;
-    const code = l.trim().toLowerCase();
-    if (LANG_CODE_RE.test(code) && !langs.includes(code)) langs.push(code);
+    const code = configLang(l);
+    if (code && !langs.includes(code)) langs.push(code);
     if (langs.length >= MAX_LANGUAGES) break;
   }
   if (langs.length) out.languages = langs.join(',');
 
-  if (cfg.hi === true || cfg.hi === 'true' || cfg.hi === 'on') out.hi = true;
+  const on = (v) => v === true || v === 'true' || v === 'on' || v === 1 || v === '1';
+  if (on(cfg.hi)) out.hi = true;
+  if (on(cfg.ai)) out.ai = true;
+  if (on(cfg.sdh)) out.sdh = true;
+  if (on(cfg.clean)) out.clean = true;
+  if (on(cfg.plain)) out.plain = true;
+  const dual = typeof cfg.dual === 'string' ? cfg.dual.trim().toLowerCase() : '';
+  if (/^[a-z]{2}$/.test(dual)) out.dual = dual;
   return out;
 }
 
@@ -761,20 +1031,12 @@ function parseStremioId(id) {
 // ). It carries the identity of the actual video file the user is playing,
 // which is what lets subtitle providers match by hash / filename instead of
 // dumping every sub for the show and hoping the first one lines up. Parse it
-// as URL-encoded querystring pairs.
+// as URL-encoded querystring pairs: split on & first, then decode each value
+// once (as the SDK's qs.parse does). Decoding the whole segment first turned
+// "Tom%20%26%20Jerry" into "Tom " and dropped any value with a literal %.
 function parseExtras(seg) {
   if (!seg) return {};
-  const s = decodeURIComponent(seg.replace(/\.json$/, ''));
-  const out = {};
-  for (const pair of s.split('&')) {
-    if (!pair) continue;
-    const eq = pair.indexOf('=');
-    if (eq === -1) continue;
-    try {
-      out[decodeURIComponent(pair.slice(0, eq))] = decodeURIComponent(pair.slice(eq + 1));
-    } catch {}
-  }
-  return out;
+  return Object.fromEntries(new URLSearchParams(seg.replace(/\.json$/, '')));
 }
 
 // Ensure the subtitle file is fetched in the charset Wyzie reports for it, so
@@ -791,14 +1053,6 @@ function withEncoding(rawUrl, encoding) {
     return rawUrl;
   }
 }
-
-// Stremio's local streaming server. Routing each subtitle through it
-// (subtitles.vtt?from=<file>) makes Stremio fetch the file locally, detect its
-// encoding, convert it to a clean WebVTT, and serve it with proper headers.
-// That fixes two classes of bug: garbled/mis-encoded text, and subtitles that
-// freeze or stop updating when seeking (the player gets a fully-buffered local
-// VTT instead of loading a remote SRT flakily). See stremio-addon-sdk docs.
-const STREMIO_SUB_PROXY = 'http://127.0.0.1:11470/subtitles.vtt?from=';
 
 // Release-name tokens worth boosting on — quality tier, source, codec, HDR flag,
 // and audio codec. A subtitle whose release/fileName shares these with the
@@ -823,58 +1077,173 @@ function releaseGroup(text) {
 
 function scoreSub(sub, wantTokens, wantGroup) {
   if (!wantTokens.size && !wantGroup) return 0;
-  const candidates = [sub.release, sub.fileName, ...(Array.isArray(sub.releases) ? sub.releases : [])]
-    .filter(Boolean)
-    .join(' ');
-  if (!candidates) return 0;
+  const names = [sub.release, sub.fileName, ...(Array.isArray(sub.releases) ? sub.releases : [])].filter(Boolean);
+  if (!names.length) return 0;
   let score = 0;
-  const subTokens = releaseTokens(candidates);
-  for (const t of subTokens) if (wantTokens.has(t)) score += 1;
-  const subGroup = releaseGroup(candidates);
-  if (wantGroup && subGroup && subGroup === wantGroup) score += 5;
+  for (const t of releaseTokens(names.join(' '))) if (wantTokens.has(t)) score += 1;
+  // Each name's own group: joined together, only the last name's group was
+  // ever seen, so most same-release subtitles went unrecognised.
+  if (wantGroup && names.some((n) => releaseGroup(n) === wantGroup)) score += 5;
   return score;
 }
 
-// preferHi: list hearing-impaired (SDH) subtitles first. This is done here
-// rather than with Wyzie's `hi=true`, which is a hard filter that would drop
-// every non-SDH subtitle.
-function mapSubs(items, filename, preferHi) {
+// Base language code ("en" from "en-US"), lowercased.
+function baseLang(code) {
+  return String(code || '').trim().toLowerCase().split(/[-_]/)[0];
+}
+
+// mapSubs turns Wyzie /search rows into Stremio subtitle entries.
+//   opts.preferHi   list hearing-impaired (SDH) subtitles first (done here, not
+//                   with Wyzie's hi=true, which hard-drops every non-SDH sub).
+//   opts.ai         keep the AI-translation rows (source "ai"). Off by default,
+//                   so a normal picker is not flooded with ~135 machine rows.
+//   opts.langs      the language codes the user configured (configLang form).
+//                   AI rows are emitted only for these, one per language, the
+//                   exact one (pickAiRows); with no languages set, AI rows are
+//                   dropped rather than listing every language. They also pick
+//                   which subtitles get a dual copy (English when unset).
+//   opts.contentKey short per-title key (imdb[.season.episode]) mixed into every
+//                   subtitle id. WITHOUT this, AI rows (whose Wyzie id is just
+//                   "ai-<lang>") produce an identical Stremio id on every title,
+//                   and Stremio serves a cached translation from a DIFFERENT
+//                   show, the "wrong subtitle for the wrong show" bug. The id
+//                   must be stable for one title yet unique across titles.
+//   opts.options    Wyzie download options for real (/c/) links, e.g.
+//                   { sdh: 'strip', clean: '1', plain: '1' }. AI rows are
+//                   /translate links and never take them.
+//   opts.dual       two-letter code: each of the best DUAL_MAX real subtitles
+//                   in the configured languages (English when none are set),
+//                   other than the second language itself, also gets a
+//                   "+ <Language>" copy with dual= set, so the player shows both
+//                   languages at once. The plain copies stay, so the user can
+//                   still pick one language.
+function mapSubs(items, filename, opts) {
+  const { preferHi = false, ai = false, langs = [], contentKey = '', options = null, dual = '' } = opts || {};
   const seenUrls = new Set();
   const usedIds = new Set();
+  const isAiRow = (s) => !!s && (s.ai === true || s.source === 'ai');
+  // AI rows are opt-in and only for languages the user actually chose.
+  const aiRows = ai && langs.length ? pickAiRows(items.filter((s) => isAiRow(s) && s.url), langs) : new Set();
+  // Dual copies only for subtitles in a language the user reads: without
+  // this they went to whatever came first (Hungarian, Polish, ...).
+  const dualFamilies = new Set(langs.length ? langs.map(langFamily) : ['en']);
+  dualFamilies.delete(langFamily(dual));
   const wantTokens = filename ? releaseTokens(filename) : new Set();
   const wantGroup = filename ? releaseGroup(filename) : null;
+  const key = String(contentKey || '').replace(/[^a-z0-9]+/gi, '.');
   const scored = [];
   items.forEach((s, idx) => {
     if (!s || !s.url) return;
-    const fileUrl = withEncoding(s.url, s.encoding);
-    if (seenUrls.has(fileUrl)) return; // collapse duplicate files
-    seenUrls.add(fileUrl);
+    const isAi = isAiRow(s);
+    if (isAi && !aiRows.has(s)) return;
+
+    const encoded = isAi ? s.url : withEncoding(s.url, s.encoding);
+    if (seenUrls.has(encoded)) return; // collapse duplicate files
+    seenUrls.add(encoded);
+    // Options only on text files served by /c/ (an image subtitle or archive
+    // with options is a 422, which would leave the row unplayable).
+    const optionable = !isAi && isDownloadLink(encoded) && TEXT_FORMAT_RE.test(String(s.format || 'srt'));
+    const fileUrl = optionable && options ? withParams(encoded, options) : encoded;
+
     // Stable, unique id per subtitle so Stremio tracks the selection correctly
-    // across re-requests (duplicate ids make tracks vanish or swap on seek).
-    let id = 'wyzie-' + (s.source || 'src') + '-' + (s.id != null ? s.id : idx);
+    // across re-requests, and never reuses another title's cached file. The
+    // per-title key guarantees uniqueness across shows; idx breaks any residual
+    // tie within one response. An AI row is named by its full code, since pt
+    // and pb can both be configured (pt and pt-BR rows).
+    const aiCode = String(s.language || 'en').trim().toLowerCase();
+    let id = 'wyzie-' + (key ? key + '-' : '') + (isAi ? 'ai-' + aiCode : (s.source || 'src') + '-' + (s.id != null ? s.id : idx));
     if (usedIds.has(id)) id += '-' + idx;
     usedIds.add(id);
+
     const lang = stremioLang(s.language || 'en');
-    const score = scoreSub(s, wantTokens, wantGroup);
+    const score = isAi ? 0 : scoreSub(s, wantTokens, wantGroup);
+    // Real subtitles rank above AI (a human sub beats a machine one), then SDH
+    // first when preferred, then release-match score.
+    const aiRank = isAi ? 1 : 0;
     const hiRank = preferHi && s.isHearingImpaired ? 0 : 1;
+    const label = `${s.display || lang}${s.isHearingImpaired && !(options && options.sdh) ? ' (SDH)' : ''}`;
     scored.push({
+      aiRank,
       hiRank,
       score,
       idx, // stable secondary key so equal-score subs keep provider order
+      // Candidate for a bilingual copy: a real text subtitle in one of the
+      // user's languages, not already in the second language.
+      dualUrl: dual && optionable && dualFamilies.has(langFamily(s.language || 'en')) ? withParams(fileUrl, { dual }) : null,
       out: {
         id,
-        url: STREMIO_SUB_PROXY + encodeURIComponent(fileUrl),
+        // The Wyzie link itself. Stremio's player already routes subtitles
+        // through the user's streaming server when there is one (and falls
+        // back to this URL), so a hard-coded 127.0.0.1:11470 proxy only broke
+        // Stremio Web on phones/TVs with a remote or no server. The link
+        // carries the file's charset (withEncoding) for non-Latin scripts.
+        url: fileUrl,
         lang,
         // Prefix a ✓ on top-scoring matches so the user sees which subs the
-        // addon believes fit THIS release best. Cheap visual, no lang change.
-        name: `${score >= 5 ? '✓ ' : ''}${s.display || lang}${s.isHearingImpaired ? ' (SDH)' : ''}${s.ai ? ' (AI)' : ''} / ${s.source || 'wyzie'}`,
+        // addon believes fit THIS release best. AI rows are labelled so the
+        // user knows they are machine-translated, not a native track.
+        name: isAi
+          ? `${s.display || lang} · AI translated / wyzie`
+          : `${score >= 5 ? '✓ ' : ''}${label} / ${s.source || 'wyzie'}`,
       },
     });
   });
-  // Stable sort: SDH first when preferred, then highest score, ties keep
-  // provider order.
-  scored.sort((a, b) => a.hiRank - b.hiRank || b.score - a.score || a.idx - b.idx);
-  return scored.map((x) => x.out);
+  // Stable sort: real subs before AI, then SDH first when preferred, then
+  // highest release-match score, ties keep provider order.
+  scored.sort((a, b) => a.aiRank - b.aiRank || a.hiRank - b.hiRank || b.score - a.score || a.idx - b.idx);
+  const out = scored.map((x) => x.out);
+  if (!dual) return out;
+
+  // Bilingual copies of the best-ranked subtitles, listed first: the user
+  // turned this on, so Stremio's auto-pick should land on one. If Wyzie finds
+  // no matching second-language file, the download is the plain subtitle.
+  const second = languageName(dual);
+  const dualRows = [];
+  for (const x of scored) {
+    if (dualRows.length >= DUAL_MAX) break;
+    if (!x.dualUrl) continue;
+    dualRows.push({
+      id: x.out.id + '-dual-' + dual,
+      url: x.dualUrl,
+      lang: x.out.lang,
+      name: x.out.name.replace(/ \/ ([^/]*)$/, ` + ${second} / $1`),
+    });
+  }
+  return dualRows.concat(out);
+}
+
+const DUAL_MAX = 8;
+const TEXT_FORMAT_RE = /^(srt|vtt|webvtt|ass|ssa|sub|ttml|dfxp|txt)$/i;
+
+// A Wyzie /c/ download link (the only kind that takes download options).
+function isDownloadLink(rawUrl) {
+  try {
+    return new URL(rawUrl).pathname.startsWith('/c/');
+  } catch {
+    return false;
+  }
+}
+
+function withParams(rawUrl, params) {
+  try {
+    const u = new URL(rawUrl);
+    for (const [k, v] of Object.entries(params)) if (v != null && v !== '') u.searchParams.set(k, String(v));
+    return u.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
+// OpenSubtitles' regional codes as BCP 47 tags, which Intl can name.
+const OS_REGIONAL_TAG = { pb: 'pt-BR', zt: 'zh-Hant', ea: 'es-419' };
+
+// "Spanish" for "es"; the code in capitals if the runtime has no names.
+function languageName(code) {
+  try {
+    const name = new Intl.DisplayNames(['en'], { type: 'language' }).of(OS_REGIONAL_TAG[code] || code);
+    if (name && name.toLowerCase() !== code) return name;
+  } catch {}
+  return String(code).toUpperCase();
 }
 
 // Surface a status/error to the user inside Stremio's subtitle picker. Stremio
@@ -914,7 +1283,7 @@ function refusalNotice(status, body) {
       return { key: 'held', text: 'Wyzie: key on hold. Verify your site at store.wyzie.io/verify (or contact support).' };
     }
     if (low.includes('free plan')) {
-      return { key: 'pro', text: 'Wyzie: the chosen sources need a Pro key. Free keys get OpenSubtitles and IndexSubtitle.' };
+      return { key: 'pro', text: 'Wyzie: the chosen sources need a Pro key. Free keys get OpenSubtitles.' };
     }
     if (low.includes('invalid api key')) {
       return { key: 's403', text: 'Wyzie: invalid API key. Re-check it in the addon settings.' };
@@ -936,11 +1305,16 @@ function refusalNotice(status, body) {
   if (status === 503) {
     return { key: 's503', text: 'Wyzie: service briefly unavailable. Try again in a moment.' };
   }
+  if (status === 400) {
+    // A request Wyzie can't take (e.g. "Invalid language format"): its own
+    // words say what to fix, a bare "service error 400" doesn't.
+    return { key: 's400', text: 'Wyzie: request rejected (' + (message || '400') + '). Check the addon settings.' };
+  }
   return { key: 's' + status, text: 'Wyzie: service error ' + status + '. Try again later.' };
 }
 
 async function fetchSubtitles(type, id, extras, config, origin) {
-  const { apiKey, languages, hi, badKey } = config;
+  const { apiKey, languages, hi, ai, dual, sdh, clean, plain, badKey } = config;
   if (badKey) {
     return { subtitles: notice(origin, 's403', 'Wyzie: invalid API key. Re-check it in the addon settings.'), cacheMaxAge: 60 };
   }
@@ -969,7 +1343,10 @@ async function fetchSubtitles(type, id, extras, config, origin) {
     url.searchParams.set('season', season);
     url.searchParams.set('episode', episode);
   }
-  if (languages) url.searchParams.set('language', languages);
+  // The configured codes, as the two-letter codes the API takes (es-mx -> es).
+  const langs = String(languages || '').split(',').filter(Boolean);
+  const apiLangs = [...new Set(langs.map(apiLang).filter(Boolean))];
+  if (apiLangs.length) url.searchParams.set('language', apiLangs.join(','));
   // No `hi` parameter: on Wyzie it is a hard filter (only SDH subtitles come
   // back). The "prefer hearing-impaired" option sorts SDH first in mapSubs.
   // NOTE on extras: Stremio sends { videoHash, videoSize, filename } when it
@@ -980,8 +1357,11 @@ async function fetchSubtitles(type, id, extras, config, origin) {
   // the file the user is playing floats to the top of the picker.
 
   try {
+    // Cap the wait so a slow/stuck upstream returns a friendly notice instead
+    // of hanging until Stremio itself gives up (which shows an empty list).
     const res = await fetch(url.toString(), {
-      headers: { 'User-Agent': 'wyzie-stremio/1.2' },
+      headers: { 'User-Agent': 'wyzie-stremio/1.4.1' },
+      signal: AbortSignal.timeout(20000),
     });
 
     if (!res.ok) {
@@ -998,7 +1378,19 @@ async function fetchSubtitles(type, id, extras, config, origin) {
 
     const data = await res.json();
     const list = Array.isArray(data) ? data : (data.subtitles ?? []);
-    const subs = mapSubs(list, extras?.filename, !!hi);
+    const contentKey = [imdb, season, episode].filter(Boolean).join('.');
+    const options = {};
+    if (sdh) options.sdh = 'strip';
+    if (clean) options.clean = '1';
+    if (plain) options.plain = '1';
+    const subs = mapSubs(list, extras?.filename, {
+      preferHi: !!hi,
+      ai: !!ai,
+      langs,
+      contentKey,
+      options: Object.keys(options).length ? options : null,
+      dual: dual || '',
+    });
     if (!subs.length) {
       // Key works, but nothing matched this title. Say so rather than looking broken.
       return { subtitles: notice(origin, 'empty', 'Wyzie: no subtitles found for this title.'), cacheMaxAge: 600 };
@@ -1024,6 +1416,15 @@ export default {
     const { pathname } = reqUrl;
     const parts = pathname.split('/').filter(Boolean);
     const last = parts[parts.length - 1] || '';
+
+    // Served first-party: the manifest logo, the favicon and the config page
+    // header all point here.
+    if (pathname === '/logo.png') {
+      return new Response(LOGO_PNG, {
+        status: 200,
+        headers: { ...CORS, 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=604800' },
+      });
+    }
 
     // Notice subtitle: a one-cue SRT carrying a status/error message, shown on
     // screen if the user selects a Wyzie notice row in the subtitle picker.
@@ -1056,7 +1457,7 @@ export default {
       if (!API_KEY_RE.test(k)) return json({ valid: false, type: null });
       try {
         const r = await fetch(WYZIE_API + '/api/usage-limit?api_key=' + encodeURIComponent(k), {
-          headers: { 'User-Agent': 'wyzie-stremio/1.2', 'Accept': 'application/json' },
+          headers: { 'User-Agent': 'wyzie-stremio/1.4.1', 'Accept': 'application/json' },
           signal: AbortSignal.timeout(5000),
         });
         if (r.status === 404 || r.status === 403) return json({ valid: false, type: null });
@@ -1088,8 +1489,8 @@ export default {
 
     // subtitles: /<config?>/subtitles/<type>/<id>(.json)(/<extras>.json)?
     // Stremio appends an extras segment (videoHash, videoSize, filename)
-    // when it knows them — we forward `filename` to wyzie/search so the top
-    // pick lines up with the exact file the user is playing.
+    // when it knows them; `filename` ranks the results so the top pick lines
+    // up with the exact file the user is playing.
     const subIdx = parts.indexOf('subtitles');
     if (subIdx !== -1 && parts.length >= subIdx + 3) {
       const configSeg = subIdx >= 1 ? parts[0] : '';

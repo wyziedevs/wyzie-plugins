@@ -24,3 +24,10 @@ invocation_logs = false
 
 [observability.traces]
 enabled = false
+
+# logo.png is imported by worker.js as an ArrayBuffer and served at /logo.png.
+# It used to hotlink i.postimg.cc, which Brave Shields blocks.
+[[rules]]
+type = "Data"
+globs = ["**/*.png"]
+fallthrough = true
