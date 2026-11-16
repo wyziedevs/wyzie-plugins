@@ -356,6 +356,8 @@ function mapToStremioSubs(items, preferHi, ai, langs, contentKey, options, dual,
         name: isAi
           ? `${s.display || s.language} · AI translated / wyzie`
           : `${score >= 5 ? '✓ ' : ''}${s.display || s.language}${s.isHearingImpaired && !(options && options.sdh) ? ' (SDH)' : ''} / ${s.source || 'wyzie'}`,
+        // The release file the subtitle was made for, for players that show it.
+        ...(s.fileName ? { subtitleFileName: String(s.fileName) } : {}),
       },
     });
   });

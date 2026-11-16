@@ -1185,6 +1185,8 @@ function mapSubs(items, filename, opts) {
         name: isAi
           ? `${s.display || lang} · AI translated / wyzie`
           : `${score >= 5 ? '✓ ' : ''}${label} / ${s.source || 'wyzie'}`,
+        // The release file the subtitle was made for, for players that show it.
+        ...(s.fileName ? { subtitleFileName: String(s.fileName) } : {}),
       },
     });
   });

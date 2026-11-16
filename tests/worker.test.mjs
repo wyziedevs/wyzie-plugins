@@ -214,6 +214,18 @@ async function offline() {
     ok('dual label names Brazilian Portuguese', pt[0] && /\+ Brazilian Portuguese|\+ Portuguese \(Brazil\)/.test(pt[0].name), pt[0] && pt[0].name);
   }
 
+  console.log('\nRelease file name passed on (offline):');
+  {
+    stub = () => reply(200, [
+      C(1, 'en', { fileName: 'Tom.and.Jerry.1080p.WEB-DL.x264-GRP.srt' }),
+      C(2, 'en'),
+    ]);
+    const list = await subs({ apiKey: TEST_KEY, languages: 'en' }, 'tt0816692');
+    const byId = (n) => list.find((s) => s.id.endsWith('charlie-' + n));
+    ok('subtitle carries its file name', byId(1) && byId(1).subtitleFileName === 'Tom.and.Jerry.1080p.WEB-DL.x264-GRP.srt', byId(1) && byId(1).subtitleFileName);
+    ok('no file name, no field', byId(2) && !('subtitleFileName' in byId(2)));
+  }
+
   console.log('\nExtras segment decoded once (offline):');
   {
     stub = () => reply(200, [
